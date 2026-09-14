@@ -133,12 +133,12 @@ Suggested fields:
 - `business_description text null`
 - `business_hours jsonb`
 - `default_language text`
-- `default_currency text`
 - `settings jsonb`
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
 Use structured columns for frequently queried fields. Use JSONB only for flexible settings that do not justify a dedicated schema yet.
+`tenants.currency` is the canonical tenant currency; do not duplicate currency ownership in this table.
 
 ---
 
@@ -192,6 +192,8 @@ Recommended default stages:
 - `won`
 - `lost`
 - `dormant`
+
+Initial stage types are `open`, `won`, `lost`, and `dormant`. `open` stages are non-terminal; the other stage types are explicitly terminal. Opportunity outcome timestamps are derived from stage type so tenant-defined keys remain configuration rather than application branches.
 
 ---
 
@@ -261,6 +263,8 @@ Suggested fields:
 
 Important:
 `lead_data` stores niche-specific answers based on configured field definitions.
+
+Initial lead statuses are `new`, `contacted`, `engaged`, `qualifying`, `qualified`, `disqualified`, `dormant`, and `converted`. Initial qualification statuses are `unqualified`, `pending`, `qualified`, and `disqualified`.
 
 ---
 
