@@ -1,6 +1,6 @@
 # Lead-to-Revenue Platform
 
-A reusable, multi-tenant, configuration-driven platform for turning enquiries into qualified sales opportunities and measurable revenue. Industry-specific behavior will be supplied through templates and tenant configuration rather than separate applications.
+A reusable, multi-tenant, configuration-driven platform for turning enquiries into qualified sales opportunities and measurable revenue. Phase 1B establishes Supabase authentication, profiles, tenant membership, active-tenant context, and row-level tenant isolation.
 
 ## Repository structure
 
@@ -15,11 +15,12 @@ A reusable, multi-tenant, configuration-driven platform for turning enquiries in
       integrations/     Future provider adapters
       ui/               Future shared UI components
     supabase/
-      migrations/       Future database migrations
-      seed/             Future seed data
+      migrations/       Versioned database migrations
+      seed/             Future local seed data
+      tests/            pgTAP database and RLS tests
     templates/          Future industry-template data
 
-The shared-package and Supabase directories are intentionally empty during Phase 1A.
+The shared-package directories remain placeholders until their relevant implementation phases.
 
 ## Local development
 
@@ -27,6 +28,7 @@ The shared-package and Supabase directories are intentionally empty during Phase
 
 - Node.js 20.9 or newer
 - pnpm 11.19.0
+- Docker Desktop or another Docker-compatible runtime for local Supabase
 
 ### Setup
 
@@ -34,7 +36,15 @@ Install workspace dependencies from the repository root:
 
     pnpm install
 
-The scaffold does not connect to Supabase yet. When environment variables are needed, copy `apps/web/.env.example` to `apps/web/.env.local` and provide local values. Never commit real secrets.
+Start local Supabase:
+
+    pnpm supabase:start
+
+Copy `apps/web/.env.example` to `apps/web/.env.local`. Use the local API URL, anon key, and service-role key printed by `supabase start` (or `pnpm exec supabase status`). The service-role key is server-only and must never use a `NEXT_PUBLIC_` prefix or be committed.
+
+Apply migrations and reset local data:
+
+    pnpm db:reset
 
 Start the web application:
 
@@ -42,8 +52,13 @@ Start the web application:
 
 Open [http://localhost:3000](http://localhost:3000).
 
+Create a test user through local Supabase Studio at [http://localhost:54323](http://localhost:54323), then sign in at `/login`. Profile provisioning is handled by a database trigger in the same transaction as auth-user creation. If the user has no tenant, `/app/dashboard` redirects to `/app/create-business`.
+
 ### Verification commands
 
     pnpm lint
     pnpm typecheck
     pnpm build
+    pnpm db:test
+
+`pnpm db:test` runs the pgTAP isolation suite against the local Supabase database. No command in this repository automatically deploys migrations to a production Supabase project.
