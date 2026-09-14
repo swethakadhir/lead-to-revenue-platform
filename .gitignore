@@ -20,6 +20,8 @@ next-env.d.ts
 .vercel/
 .turbo/
 .cache/
+supabase/.branches/
+supabase/.temp/
 
 # Logs
 *.log
