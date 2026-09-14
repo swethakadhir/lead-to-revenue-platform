@@ -301,24 +301,31 @@ Suggested fields:
 - `tenant_id uuid`
 - `lead_id uuid null`
 - `opportunity_id uuid null`
-- `contact_id uuid null`
+- `contact_id uuid`
 - `assigned_user_id uuid null`
-- `appointment_type text`
-- `starts_at timestamptz`
-- `ends_at timestamptz null`
+- `title text`
+- `appointment_type text null`
 - `status text`
-- `external_calendar_id text null`
+- `starts_at timestamptz`
+- `ends_at timestamptz`
+- `timezone text`
+- `location text null`
+- `meeting_url text null`
 - `notes text null`
+- `cancellation_reason text null`
+- `completed_at timestamptz null`
+- `cancelled_at timestamptz null`
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
-Status examples:
-- `booked`
+Initial statuses:
+- `scheduled`
 - `confirmed`
 - `completed`
 - `cancelled`
 - `no_show`
-- `rescheduled`
+
+Contact, lead, opportunity, and assignee relationships are tenant-bound. Assignees must be active tenant members, `ends_at` must be after `starts_at`, and PostgreSQL derives completion/cancellation timestamps from status transitions.
 
 ---
 
@@ -330,22 +337,30 @@ Suggested fields:
 - `opportunity_id uuid null`
 - `contact_id uuid null`
 - `assigned_user_id uuid null`
-- `channel text`
-- `due_at timestamptz`
+- `type text`
 - `status text`
-- `reason text null`
-- `automation_key text null`
+- `due_at timestamptz`
 - `completed_at timestamptz null`
-- `cancelled_at timestamptz null`
+- `notes text null`
+- `outcome text null`
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
-Status:
+Initial types:
+- `call`
+- `whatsapp`
+- `email`
+- `meeting`
+- `general`
+
+Initial statuses:
 - `pending`
-- `processing`
 - `completed`
 - `cancelled`
-- `failed`
+
+Contact, lead, opportunity, and assignee relationships are tenant-bound. Assignees must be active tenant members, and PostgreSQL derives `completed_at` from status transitions.
+
+Intended future domain events are `appointment.booked`, `appointment.confirmed`, `appointment.completed`, `appointment.cancelled`, `appointment.no_show`, `followup.created`, and `followup.completed`. Persistence and dispatch are deferred until the shared event/audit infrastructure is introduced; Phase 3 does not connect these events to an external system.
 
 ---
 

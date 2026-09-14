@@ -18,6 +18,8 @@ export default async function ProtectedAppLayout({ children }: { children: React
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/dashboard">Dashboard</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/leads">Leads</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/pipeline">Pipeline</Link>
+            <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/appointments">Appointments</Link>
+            <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/followups">Follow-ups</Link>
           </nav>
           <div className="flex items-center gap-3 text-sm"><span className="hidden text-slate-500 sm:inline">{user.email}</span><form action={signOut}><button className="rounded-lg border border-slate-300 px-3 py-2" type="submit">Sign out</button></form></div>
         </div>

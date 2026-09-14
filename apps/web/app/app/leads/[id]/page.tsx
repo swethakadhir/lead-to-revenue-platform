@@ -3,15 +3,18 @@ import { notFound, redirect } from "next/navigation";
 import { LeadEditForm } from "@/components/sales/lead-edit-form";
 import { OpportunityCreateForm } from "@/components/sales/opportunity-create-form";
 import { StageForm } from "@/components/sales/stage-form";
-import { contactName, getLead, getPipelineStages, getTeamMembers } from "@/lib/domain/sales/data";
+import { LeadOperations } from "@/components/operations/lead-operations";
+import { getLeadOperations, getOperationalReferences } from "@/lib/domain/operations/data";
+import { contactName, getLead, getPipelineStages } from "@/lib/domain/sales/data";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const tenant = await getActiveTenant();
   if (!tenant) redirect("/app/create-business");
   const { id } = await params;
-  const [detail, stages, members] = await Promise.all([getLead(tenant.id, id), getPipelineStages(tenant.id), getTeamMembers(tenant.id)]);
+  const [detail, stages, references, operations] = await Promise.all([getLead(tenant.id, id), getPipelineStages(tenant.id), getOperationalReferences(tenant.id), getLeadOperations(tenant.id, id)]);
   if (!detail) notFound();
+  const members = references.members;
   const canOperate = tenant.role !== "viewer";
   const memberMap = new Map(members.map((member) => [member.userId, member.label]));
 
@@ -26,6 +29,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           {canOperate && <OpportunityCreateForm currency={tenant.currency} leadId={detail.lead.id} members={members} stages={stages} />}
         </div>
       </div>
+      <LeadOperations appointments={operations.appointments} canOperate={canOperate} contactId={detail.lead.contact_id} followups={operations.followups} leadId={detail.lead.id} references={references} timezone={tenant.timezone} />
     </main>
   );
 }

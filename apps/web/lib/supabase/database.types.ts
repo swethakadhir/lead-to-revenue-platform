@@ -45,6 +45,18 @@ export type Database = {
         Update: { name?: string; stage_key?: string; estimated_value?: number | null; currency?: string; probability?: number | null; assigned_user_id?: string | null; expected_close_date?: string | null; lost_reason?: string | null; updated_at?: string };
         Relationships: [];
       };
+      appointments: {
+        Row: { id: string; tenant_id: string; lead_id: string | null; opportunity_id: string | null; contact_id: string; assigned_user_id: string | null; title: string; appointment_type: string | null; status: string; starts_at: string; ends_at: string; timezone: string; location: string | null; meeting_url: string | null; notes: string | null; cancellation_reason: string | null; completed_at: string | null; cancelled_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id?: string | null; opportunity_id?: string | null; contact_id: string; assigned_user_id?: string | null; title: string; appointment_type?: string | null; status?: string; starts_at: string; ends_at: string; timezone: string; location?: string | null; meeting_url?: string | null; notes?: string | null; cancellation_reason?: string | null; created_at?: string; updated_at?: string };
+        Update: { lead_id?: string | null; opportunity_id?: string | null; contact_id?: string; assigned_user_id?: string | null; title?: string; appointment_type?: string | null; status?: string; starts_at?: string; ends_at?: string; timezone?: string; location?: string | null; meeting_url?: string | null; notes?: string | null; cancellation_reason?: string | null; updated_at?: string };
+        Relationships: [];
+      };
+      followups: {
+        Row: { id: string; tenant_id: string; lead_id: string | null; opportunity_id: string | null; contact_id: string; assigned_user_id: string | null; type: string; status: string; due_at: string; completed_at: string | null; notes: string | null; outcome: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id?: string | null; opportunity_id?: string | null; contact_id: string; assigned_user_id?: string | null; type: string; status?: string; due_at: string; notes?: string | null; outcome?: string | null; created_at?: string; updated_at?: string };
+        Update: { lead_id?: string | null; opportunity_id?: string | null; contact_id?: string; assigned_user_id?: string | null; type?: string; status?: string; due_at?: string; notes?: string | null; outcome?: string | null; updated_at?: string };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
