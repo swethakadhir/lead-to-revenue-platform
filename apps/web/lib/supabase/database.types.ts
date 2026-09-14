@@ -1,3 +1,5 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 export type Database = {
   public: {
     Tables: {
@@ -19,6 +21,30 @@ export type Database = {
         Update: { role?: string; status?: string };
         Relationships: [];
       };
+      pipeline_definitions: {
+        Row: { id: string; tenant_id: string; key: string; name: string; stage_order: number; stage_type: string; is_terminal: boolean; is_active: boolean };
+        Insert: { id?: string; tenant_id: string; key: string; name: string; stage_order: number; stage_type: string; is_terminal?: boolean; is_active?: boolean };
+        Update: { key?: string; name?: string; stage_order?: number; stage_type?: string; is_terminal?: boolean; is_active?: boolean };
+        Relationships: [];
+      };
+      contacts: {
+        Row: { id: string; tenant_id: string; first_name: string; last_name: string | null; email: string | null; phone: string | null; whatsapp_number: string | null; preferred_channel: string | null; metadata: Json; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; first_name: string; last_name?: string | null; email?: string | null; phone?: string | null; whatsapp_number?: string | null; preferred_channel?: string | null; metadata?: Json; created_at?: string; updated_at?: string };
+        Update: { first_name?: string; last_name?: string | null; email?: string | null; phone?: string | null; whatsapp_number?: string | null; preferred_channel?: string | null; metadata?: Json; updated_at?: string };
+        Relationships: [];
+      };
+      leads: {
+        Row: { id: string; tenant_id: string; contact_id: string | null; source_id: string | null; campaign_id: string | null; external_lead_id: string | null; status: string; qualification_status: string; qualification_score: number | null; assigned_user_id: string | null; lead_data: Json; first_contacted_at: string | null; last_contacted_at: string | null; next_followup_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; contact_id?: string | null; source_id?: string | null; campaign_id?: string | null; external_lead_id?: string | null; status?: string; qualification_status?: string; qualification_score?: number | null; assigned_user_id?: string | null; lead_data?: Json; first_contacted_at?: string | null; last_contacted_at?: string | null; next_followup_at?: string | null; created_at?: string; updated_at?: string };
+        Update: { contact_id?: string | null; source_id?: string | null; campaign_id?: string | null; external_lead_id?: string | null; status?: string; qualification_status?: string; qualification_score?: number | null; assigned_user_id?: string | null; lead_data?: Json; first_contacted_at?: string | null; last_contacted_at?: string | null; next_followup_at?: string | null; updated_at?: string };
+        Relationships: [];
+      };
+      opportunities: {
+        Row: { id: string; tenant_id: string; lead_id: string; contact_id: string | null; name: string; stage_key: string; estimated_value: number | null; currency: string; probability: number | null; assigned_user_id: string | null; expected_close_date: string | null; won_at: string | null; lost_at: string | null; lost_reason: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id: string; contact_id?: string | null; name: string; stage_key: string; estimated_value?: number | null; currency: string; probability?: number | null; assigned_user_id?: string | null; expected_close_date?: string | null; lost_reason?: string | null; created_at?: string; updated_at?: string };
+        Update: { name?: string; stage_key?: string; estimated_value?: number | null; currency?: string; probability?: number | null; assigned_user_id?: string | null; expected_close_date?: string | null; lost_reason?: string | null; updated_at?: string };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -26,8 +52,19 @@ export type Database = {
         Args: { p_creator_user_id: string; p_name: string; p_slug: string; p_timezone: string; p_currency: string };
         Returns: Database["public"]["Tables"]["tenants"]["Row"];
       };
+      create_manual_lead: {
+        Args: { p_tenant_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_status: string; p_assigned_user_id: string | null; p_lead_data: Json };
+        Returns: string;
+      };
+      update_lead_with_contact: {
+        Args: { p_tenant_id: string; p_lead_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_status: string; p_qualification_status: string; p_qualification_score: number | null; p_assigned_user_id: string | null; p_lead_data: Json };
+        Returns: undefined;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
 };
+
+export type TableRow<TableName extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][TableName]["Row"];
