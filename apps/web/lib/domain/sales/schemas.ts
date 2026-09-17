@@ -23,17 +23,21 @@ const optionalNumber = (minimum: number, maximum: number) => z.preprocess(
   z.coerce.number().min(minimum).max(maximum).optional(),
 ).transform((value) => value ?? null);
 
-const jsonObjectText = z.string().trim().max(20_000).transform((value, context): Json => {
-  if (!value) return {};
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
-    return parsed as Json;
-  } catch {
-    context.addIssue({ code: "custom", message: "Enter a valid JSON object." });
-    return z.NEVER;
+const jsonObjectText = z.preprocess((input, context): unknown => {
+  const value = typeof input === "string" ? input.trim() : input;
+  if (value === "") return {};
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // The schema issue below provides the user-facing validation message.
+    }
   }
-});
+  context.addIssue({ code: "custom", message: "Enter a valid JSON object." });
+  return z.NEVER;
+}, z.record(z.string(), z.unknown()).transform((value): Json => value as Json));
 
 const contactFields = {
   firstName: z.string().trim().min(1, "First name is required.").max(100),
