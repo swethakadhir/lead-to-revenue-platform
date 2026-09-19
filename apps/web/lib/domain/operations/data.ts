@@ -2,6 +2,7 @@ import "server-only";
 
 import { getTeamMembers } from "@/lib/domain/sales/data";
 import { createClient } from "@/lib/supabase/server";
+import { partitionAppointments } from "./partition";
 import { zonedDayBounds } from "./time";
 import type { Appointment, AppointmentListItem, Followup, FollowupListItem, OperationalReferences } from "./types";
 
@@ -21,13 +22,7 @@ export async function getOperationalReferences(tenantId: string): Promise<Operat
 
 type Filters = { status?: string; assignee?: string; from?: string; to?: string };
 
-export function partitionAppointments(appointments: AppointmentListItem[], now = new Date()) {
-  const timestamp = now.getTime();
-  return {
-    upcoming: appointments.filter((item) => new Date(item.starts_at).getTime() >= timestamp),
-    past: appointments.filter((item) => new Date(item.starts_at).getTime() < timestamp).reverse(),
-  };
-}
+export { partitionAppointments };
 
 export async function listAppointments(tenantId: string, filters: Filters = {}): Promise<AppointmentListItem[]> {
   const supabase = await createClient();
@@ -89,7 +84,7 @@ export async function getDashboardData(tenantId: string, timeZone: string, curre
     wonCount,
     supabase.from("appointments").select("*").eq("tenant_id", tenantId).in("status", ["scheduled", "confirmed"]).gte("starts_at", today.start).lt("starts_at", today.end).order("starts_at").limit(8),
     supabase.from("followups").select("*").eq("tenant_id", tenantId).eq("status", "pending").lt("due_at", nowIso).order("due_at").limit(8),
-    supabase.from("followups").select("*").eq("tenant_id", tenantId).eq("status", "pending").gte("due_at", today.start).lt("due_at", today.end).order("due_at").limit(8),
+    supabase.from("followups").select("*").eq("tenant_id", tenantId).eq("status", "pending").gte("due_at", nowIso).lt("due_at", today.end).order("due_at").limit(8),
     supabase.from("appointments").select("*").eq("tenant_id", tenantId).in("status", ["scheduled", "confirmed"]).gte("starts_at", nowIso).order("starts_at").limit(8),
     supabase.from("leads").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(8),
   ]);
