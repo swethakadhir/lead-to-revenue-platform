@@ -5,8 +5,10 @@ import { updateLead } from "@/app/app/leads/actions";
 import { Field, FormNotice, inputClass } from "./form-fields";
 import { initialFormState, leadStatuses, qualificationStatuses } from "@/lib/domain/sales/schemas";
 import type { Contact, Lead, TeamMemberOption } from "@/lib/domain/sales/types";
+import type { LeadFieldDefinition } from "@/lib/domain/configuration/dynamic-fields";
+import { DynamicLeadFields } from "./dynamic-lead-fields";
 
-export function LeadEditForm({ lead, contact, members }: { lead: Lead; contact: Contact | null; members: TeamMemberOption[] }) {
+export function LeadEditForm({ lead, contact, members, fields }: { lead: Lead; contact: Contact | null; members: TeamMemberOption[]; fields: LeadFieldDefinition[] }) {
   const updateLeadById = updateLead.bind(null, lead.id);
   const [state, action, pending] = useActionState(updateLeadById, initialFormState);
   return (
@@ -22,7 +24,7 @@ export function LeadEditForm({ lead, contact, members }: { lead: Lead; contact: 
         <Field label="Qualification score" name="qualificationScore" error={state.fieldErrors?.qualificationScore}><input className={inputClass} defaultValue={lead.qualification_score ?? ""} id="qualificationScore" max="100" min="0" name="qualificationScore" type="number" /></Field>
         <Field label="Assignee" name="assignedUserId" error={state.fieldErrors?.assignedUserId}><select className={inputClass} defaultValue={lead.assigned_user_id ?? ""} id="assignedUserId" name="assignedUserId"><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.label} · {member.role}</option>)}</select></Field>
       </div>
-      <Field label="Lead data (JSON)" name="leadData" error={state.fieldErrors?.leadData}><textarea className={`${inputClass} min-h-32 font-mono text-xs`} defaultValue={JSON.stringify(lead.lead_data, null, 2)} id="leadData" name="leadData" /></Field>
+      <DynamicLeadFields errors={state.fieldErrors} fields={fields} values={lead.lead_data} />
       <FormNotice error={state.error} message={state.message} />
       <button className="rounded-lg bg-blue-700 px-4 py-2 font-medium text-white disabled:opacity-60" disabled={pending} type="submit">{pending ? "Saving…" : "Save lead"}</button>
     </form>

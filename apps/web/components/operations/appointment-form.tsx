@@ -10,7 +10,7 @@ import type { Appointment, OperationalReferences } from "@/lib/domain/operations
 
 type FixedLinks = { contactId: string; leadId?: string | null; opportunityId?: string | null };
 
-export function AppointmentForm({ references, timezone, appointment, fixedLinks, compact = false }: { references: OperationalReferences; timezone: string; appointment?: Appointment; fixedLinks?: FixedLinks; compact?: boolean }) {
+export function AppointmentForm({ references, timezone, appointmentTypes, appointment, fixedLinks, compact = false }: { references: OperationalReferences; timezone: string; appointmentTypes: string[]; appointment?: Appointment; fixedLinks?: FixedLinks; compact?: boolean }) {
   const serverAction = appointment ? updateAppointment.bind(null, appointment.id) : createAppointment;
   const [state, action, pending] = useActionState(serverAction, initialFormState);
   const contactId = fixedLinks?.contactId ?? appointment?.contact_id ?? "";
@@ -25,7 +25,7 @@ export function AppointmentForm({ references, timezone, appointment, fixedLinks,
       </div>}
       <div className={`grid gap-4 ${compact ? "" : "sm:grid-cols-2"}`}>
         <Field label="Title" name={`title-${appointment?.id ?? "new"}`} error={state.fieldErrors?.title}><input className={inputClass} defaultValue={appointment?.title ?? ""} id={`title-${appointment?.id ?? "new"}`} name="title" required /></Field>
-        <Field label="Type" name={`appointmentType-${appointment?.id ?? "new"}`} error={state.fieldErrors?.appointmentType}><input className={inputClass} defaultValue={appointment?.appointment_type ?? ""} id={`appointmentType-${appointment?.id ?? "new"}`} name="appointmentType" placeholder="Consultation" /></Field>
+        <Field label="Type" name={`appointmentType-${appointment?.id ?? "new"}`} error={state.fieldErrors?.appointmentType}><select className={inputClass} defaultValue={appointment?.appointment_type ?? ""} id={`appointmentType-${appointment?.id ?? "new"}`} name="appointmentType"><option value="">Choose a type</option>{appointment?.appointment_type && !appointmentTypes.includes(appointment.appointment_type) && <option value={appointment.appointment_type}>{appointment.appointment_type} (legacy)</option>}{appointmentTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></Field>
         <Field label="Starts" name={`startsAt-${appointment?.id ?? "new"}`} error={state.fieldErrors?.startsAt}><input className={inputClass} defaultValue={appointment ? toLocalInput(appointment.starts_at, appointment.timezone) : ""} id={`startsAt-${appointment?.id ?? "new"}`} name="startsAt" required type="datetime-local" /></Field>
         <Field label="Ends" name={`endsAt-${appointment?.id ?? "new"}`} error={state.fieldErrors?.endsAt}><input className={inputClass} defaultValue={appointment ? toLocalInput(appointment.ends_at, appointment.timezone) : ""} id={`endsAt-${appointment?.id ?? "new"}`} name="endsAt" required type="datetime-local" /></Field>
         <Field label="Timezone" name={`timezone-${appointment?.id ?? "new"}`} error={state.fieldErrors?.timezone}><input className={inputClass} defaultValue={appointment?.timezone ?? timezone} id={`timezone-${appointment?.id ?? "new"}`} name="timezone" required /></Field>

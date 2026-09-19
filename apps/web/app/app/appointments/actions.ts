@@ -5,6 +5,8 @@ import { appointmentSchema, appointmentTransitionSchema, fieldsFromError, type F
 import { zonedLocalToIso } from "@/lib/domain/operations/time";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
+import { getTenantConfiguration } from "@/lib/domain/configuration/data";
+import { appointmentTypes } from "@/lib/domain/configuration/dynamic-fields";
 
 const value = (formData: FormData, key: string) => String(formData.get(key) ?? "");
 
@@ -31,6 +33,8 @@ export async function createAppointment(_state: FormState, formData: FormData): 
   if (!tenant) return { error: "No active business is available." };
   const result = appointmentSchema.safeParse(appointmentInput(formData));
   if (!result.success) return { error: "Check the highlighted fields.", fieldErrors: fieldsFromError(result.error) };
+  const types = appointmentTypes((await getTenantConfiguration(tenant.id)).settings.appointment_types);
+  if (result.data.appointmentType && !types.includes(result.data.appointmentType)) return { error: "Choose an available appointment type.", fieldErrors: { appointmentType: ["Choose an available type."] } };
   try {
     const { error } = await (await createClient()).from("appointments").insert({ ...mutationFrom(result.data), tenant_id: tenant.id });
     if (error) return { error: "The appointment could not be created. Verify its linked records and assignee." };
@@ -46,6 +50,11 @@ export async function updateAppointment(appointmentId: string, _state: FormState
   if (!tenant) return { error: "No active business is available." };
   const result = appointmentSchema.safeParse(appointmentInput(formData));
   if (!result.success) return { error: "Check the highlighted fields.", fieldErrors: fieldsFromError(result.error) };
+  const types = appointmentTypes((await getTenantConfiguration(tenant.id)).settings.appointment_types);
+  if (result.data.appointmentType && !types.includes(result.data.appointmentType)) {
+    const { data: existing } = await (await createClient()).from("appointments").select("appointment_type").eq("tenant_id", tenant.id).eq("id", appointmentId).maybeSingle();
+    if (existing?.appointment_type !== result.data.appointmentType) return { error: "Choose an available appointment type.", fieldErrors: { appointmentType: ["Choose an available type."] } };
+  }
   try {
     const { data, error } = await (await createClient()).from("appointments").update(mutationFrom(result.data)).eq("tenant_id", tenant.id).eq("id", appointmentId).select("id").maybeSingle();
     if (error || !data) return { error: "The appointment could not be updated." };

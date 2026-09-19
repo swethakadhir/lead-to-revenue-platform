@@ -106,6 +106,8 @@ Unique constraint:
 ### `industry_templates`
 Reusable niche templates.
 
+Phase 4 stores a versioned `configuration` JSONB definition on each global template. Template rows are authenticated-read-only; tenant users do not edit global definitions. The initial keys are `dental`, `salon`, `interior_design`, and `custom`.
+
 Suggested fields:
 - `id uuid primary key`
 - `key text unique`
@@ -126,6 +128,8 @@ Examples:
 ### `tenant_settings`
 Business-specific configuration.
 
+Phase 4 stores copied `appointment_types`, `followup_defaults`, and `terminology` JSONB alongside business information. The template is copied at provisioning, so changing a global template does not silently change a tenant. Currency remains on `tenants` only.
+
 Suggested fields:
 - `id uuid primary key`
 - `tenant_id uuid unique`
@@ -144,6 +148,8 @@ Use structured columns for frequently queried fields. Use JSONB only for flexibl
 
 ### `lead_field_definitions`
 Defines dynamic fields shown for leads.
+
+Phase 4 uses tenant-owned copies only (each row has `tenant_id`). The global template's `configuration.lead_fields` is the reusable definition. Each copy also has `placeholder`, `help_text`, `qualification_relevant`, and `updated_at`. The supported types are text, textarea, number, currency, select, multi_select, boolean, date, datetime, phone, and email. The application and database validate configured values; unconfigured legacy keys remain compatible.
 
 Suggested fields:
 - `id uuid primary key`
@@ -199,6 +205,8 @@ Initial stage types are `open`, `won`, `lost`, and `dormant`. `open` stages are 
 
 ### `qualification_rules`
 Configurable qualification rules.
+
+Phase 4 copies starter presence/contact criteria to each tenant. These are visible configuration, not AI qualification or automatic scoring. Later phases can use the rules without changing the core schema.
 
 Suggested fields:
 - `id uuid primary key`
@@ -566,6 +574,8 @@ Audit at least:
 - pipeline stage changes for critical entities;
 - manual won/lost changes;
 - destructive operations.
+
+Phase 4 introduces tenant-owned `audit_logs` for configuration updates. Only owners/admins can read them; writes come from database triggers, not clients.
 
 ---
 

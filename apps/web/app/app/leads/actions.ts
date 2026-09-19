@@ -12,6 +12,8 @@ import {
 } from "@/lib/domain/sales/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
+import { getTenantConfiguration } from "@/lib/domain/configuration/data";
+import { parseDynamicLeadData } from "@/lib/domain/configuration/dynamic-fields";
 
 function value(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -25,14 +27,16 @@ function leadInput(formData: FormData) {
     phone: value(formData, "phone"),
     status: value(formData, "status"),
     assignedUserId: value(formData, "assignedUserId"),
-    leadData: value(formData, "leadData"),
   };
 }
 
 export async function createLead(_state: FormState, formData: FormData): Promise<FormState> {
   const tenant = await getActiveTenant();
   if (!tenant) return { error: "Create or select a business before adding leads." };
-  const result = createLeadSchema.safeParse(leadInput(formData));
+  const configuration = await getTenantConfiguration(tenant.id);
+  const dynamic = parseDynamicLeadData(configuration.fields, formData);
+  if (!dynamic.success) return { error: "Check the highlighted fields.", fieldErrors: dynamic.fieldErrors };
+  const result = createLeadSchema.safeParse({ ...leadInput(formData), leadData: dynamic.data });
   if (!result.success) return { error: "Check the highlighted fields.", fieldErrors: fieldsFromError(result.error) };
 
   const { data: leadId, error } = await (await createClient()).rpc("create_manual_lead", {
@@ -54,14 +58,23 @@ export async function createLead(_state: FormState, formData: FormData): Promise
 export async function updateLead(leadId: string, _state: FormState, formData: FormData): Promise<FormState> {
   const tenant = await getActiveTenant();
   if (!tenant) return { error: "No active business is available." };
+  const client = await createClient();
+  const [{ data: currentLead, error: leadError }, configuration] = await Promise.all([
+    client.from("leads").select("lead_data").eq("tenant_id", tenant.id).eq("id", leadId).maybeSingle(),
+    getTenantConfiguration(tenant.id),
+  ]);
+  if (leadError || !currentLead) return { error: "Lead not found for the active business." };
+  const dynamic = parseDynamicLeadData(configuration.fields, formData, currentLead.lead_data);
+  if (!dynamic.success) return { error: "Check the highlighted fields.", fieldErrors: dynamic.fieldErrors };
   const result = updateLeadSchema.safeParse({
     ...leadInput(formData),
+    leadData: dynamic.data,
     qualificationStatus: value(formData, "qualificationStatus"),
     qualificationScore: value(formData, "qualificationScore"),
   });
   if (!result.success) return { error: "Check the highlighted fields.", fieldErrors: fieldsFromError(result.error) };
 
-  const { error } = await (await createClient()).rpc("update_lead_with_contact", {
+  const { error } = await client.rpc("update_lead_with_contact", {
     p_tenant_id: tenant.id,
     p_lead_id: leadId,
     p_first_name: result.data.firstName,

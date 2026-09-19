@@ -5,8 +5,10 @@ import { createLead } from "@/app/app/leads/actions";
 import { Field, FormNotice, inputClass } from "./form-fields";
 import { initialFormState, leadStatuses } from "@/lib/domain/sales/schemas";
 import type { TeamMemberOption } from "@/lib/domain/sales/types";
+import type { LeadFieldDefinition } from "@/lib/domain/configuration/dynamic-fields";
+import { DynamicLeadFields } from "./dynamic-lead-fields";
 
-export function LeadCreateForm({ members }: { members: TeamMemberOption[] }) {
+export function LeadCreateForm({ members, fields }: { members: TeamMemberOption[]; fields: LeadFieldDefinition[] }) {
   const [state, action, pending] = useActionState(createLead, initialFormState);
   return (
     <form action={action} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -19,7 +21,7 @@ export function LeadCreateForm({ members }: { members: TeamMemberOption[] }) {
         <Field label="Status" name="status" error={state.fieldErrors?.status}><select className={inputClass} defaultValue="new" id="status" name="status">{leadStatuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></Field>
         <Field label="Assignee" name="assignedUserId" error={state.fieldErrors?.assignedUserId}><select className={inputClass} defaultValue="" id="assignedUserId" name="assignedUserId"><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.label} · {member.role}</option>)}</select></Field>
       </div>
-      <Field label="Lead data (JSON)" name="leadData" error={state.fieldErrors?.leadData}><textarea className={`${inputClass} min-h-24 font-mono text-xs`} defaultValue="{}" id="leadData" name="leadData" /></Field>
+      <DynamicLeadFields errors={state.fieldErrors} fields={fields} />
       <FormNotice error={state.error} message={state.message} />
       <button className="rounded-lg bg-blue-700 px-4 py-2 font-medium text-white disabled:opacity-60" disabled={pending} type="submit">{pending ? "Creating…" : "Create lead"}</button>
     </form>

@@ -14,6 +14,7 @@ export async function createBusiness(_state: CreateBusinessState, formData: Form
   const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
   const timezone = canonicalizeIanaTimeZone(String(formData.get("timezone") ?? ""));
   const currency = String(formData.get("currency") ?? "").trim().toUpperCase();
+  const templateId = String(formData.get("templateId") ?? "");
 
   if (name.length < 2 || name.length > 120) {
     return { error: "Business name must be between 2 and 120 characters." };
@@ -27,6 +28,7 @@ export async function createBusiness(_state: CreateBusinessState, formData: Form
   if (!/^[A-Z]{3}$/.test(currency)) {
     return { error: "Currency must be a three-letter ISO code, such as USD." };
   }
+  if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(templateId)) return { error: "Choose a business type." };
 
   const { data: tenant, error } = await createAdminClient().rpc("create_tenant_with_owner", {
     p_creator_user_id: user.id,
@@ -34,6 +36,7 @@ export async function createBusiness(_state: CreateBusinessState, formData: Form
     p_slug: slug,
     p_timezone: timezone,
     p_currency: currency,
+    p_template_id: templateId,
   });
   if (error || !tenant) {
     if (error?.code === "23505") return { error: "That business slug is already in use." };
