@@ -1,6 +1,6 @@
 # Lead-to-Revenue Platform
 
-A reusable, multi-tenant, configuration-driven platform for turning enquiries into qualified sales opportunities and measurable revenue. Phase 3 adds the tenant-safe appointment and follow-up workflow plus an operational dashboard built from live tenant data.
+A reusable, multi-tenant, configuration-driven platform for turning enquiries into qualified sales opportunities and measurable revenue. Phase 4 adds industry templates and tenant-owned configuration for dynamic lead forms, pipeline labels, appointment types, and qualification criteria.
 
 ## Repository structure
 
@@ -18,7 +18,7 @@ A reusable, multi-tenant, configuration-driven platform for turning enquiries in
       migrations/       Versioned database migrations
       seed/             Future local seed data
       tests/            pgTAP database and RLS tests
-    templates/          Future industry-template data
+    templates/          Reserved for future template export assets
 
 The shared-package directories remain placeholders until their relevant implementation phases.
 
@@ -54,11 +54,11 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Create a test user through local Supabase Studio at [http://localhost:54323](http://localhost:54323), then sign in at `/login`. Profile provisioning is handled by a database trigger in the same transaction as auth-user creation. If the user has no tenant, `/app/dashboard` redirects to `/app/create-business`.
 
-Creating a business provisions the default pipeline stages in the same database transaction. Authenticated tenant operators can create and edit leads at `/app/leads`, open lead details and create opportunities at `/app/leads/[id]`, and update opportunity stages at `/app/pipeline`.
+Creating a business now requires selecting Dental Clinic, Salon / Parlour, Interior Design, or Custom / Generic. The tenant, owner membership, tenant-owned configuration, and pipeline stages are provisioned in one database transaction. Pre-Phase-4 tenants receive generic configuration without changing their existing leads or pipeline records; an owner/admin can apply a named template once at `/app/settings`. Authenticated tenant operators can create and edit leads with fields generated from their tenant configuration at `/app/leads`, open lead details and create opportunities at `/app/leads/[id]`, and update opportunity stages at `/app/pipeline`.
 
 Appointments and follow-ups are available at `/app/appointments` and `/app/followups`, and lead detail includes its operational history and creation forms. Owners, admins, sales, and front-desk members can create and update operational records; viewers are read-only. The dashboard uses only the active tenant and reports live lead, appointment, follow-up, opportunity, won, and pipeline-value metrics. Appointment times are stored as UTC instants and presented in the tenant's IANA timezone.
 
-Phase 3 does not introduce `audit_logs` or event delivery because no shared audit/event infrastructure exists yet. Critical opportunity and operational outcome timestamps are enforced in PostgreSQL. Appointment and follow-up event names are documented in the data model for a later event-infrastructure phase.
+Owners/admins can rename and reorder lead fields, change required/active status and select options, rename pipeline stages, and edit appointment types at `/app/settings`. Viewers are read-only. Configuration updates are written to `audit_logs`. No n8n, Dify, or external event delivery is part of Phase 4. See [Industry template architecture](docs/INDUSTRY_TEMPLATES.md).
 
 ### Verification commands
 
@@ -68,3 +68,5 @@ Phase 3 does not introduce `audit_logs` or event delivery because no shared audi
     pnpm db:test
 
 `pnpm db:test` runs the pgTAP isolation suite against the local Supabase database. No command in this repository automatically deploys migrations to a production Supabase project.
+
+The Phase 4 application-level validation suite can be run with `node apps/web/lib/domain/configuration/dynamic-fields.test.mjs`. The Phase 4 pgTAP suite is `supabase/tests/industry_templates.test.sql`. Apply new migrations only to the intended development project after confirming the linked Supabase project reference; do not point the CLI at production.

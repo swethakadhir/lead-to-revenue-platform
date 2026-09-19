@@ -4,13 +4,14 @@ import { LeadCreateForm } from "@/components/sales/lead-create-form";
 import { contactName, getTeamMembers, listLeads } from "@/lib/domain/sales/data";
 import { leadStatuses } from "@/lib/domain/sales/schemas";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
+import { getTenantConfiguration } from "@/lib/domain/configuration/data";
 
 type SearchParams = Promise<{ status?: string; assignee?: string; q?: string }>;
 
 export default async function LeadsPage({ searchParams }: { searchParams: SearchParams }) {
   const tenant = await getActiveTenant();
   if (!tenant) redirect("/app/create-business");
-  const [{ status = "", assignee = "", q = "" }, leads, members] = await Promise.all([searchParams, listLeads(tenant.id), getTeamMembers(tenant.id)]);
+  const [{ status = "", assignee = "", q = "" }, leads, members, configuration] = await Promise.all([searchParams, listLeads(tenant.id), getTeamMembers(tenant.id), getTenantConfiguration(tenant.id)]);
   const canOperate = tenant.role !== "viewer";
   const search = q.trim().toLowerCase();
   const visibleLeads = leads.filter((lead) => {
@@ -34,7 +35,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Search
           {visibleLeads.length ? <ul className="divide-y divide-slate-200">{visibleLeads.map((lead) => <li key={lead.id}><Link className="grid gap-2 p-4 hover:bg-slate-50 sm:grid-cols-[1.4fr_1fr_1fr_auto] sm:items-center" href={`/app/leads/${lead.id}`}><div><p className="font-medium">{contactName(lead.contact)}</p><p className="text-sm text-slate-500">{lead.contact?.email || lead.contact?.phone || "No contact details"}</p></div><span className="w-fit rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium capitalize text-blue-800">{lead.status.replaceAll("_", " ")}</span><span className="text-sm text-slate-600">{lead.assigneeLabel ?? "Unassigned"}</span><time className="text-xs text-slate-500">{new Date(lead.created_at).toLocaleDateString()}</time></Link></li>)}</ul> : <div className="p-10 text-center"><h2 className="font-semibold">No leads found</h2><p className="mt-1 text-sm text-slate-500">Adjust the filters or create the first lead.</p></div>}
         </div>
       </section>
-      {canOperate && <aside><LeadCreateForm members={members} /></aside>}
+      {canOperate && <aside><LeadCreateForm fields={configuration.fields} members={members} /></aside>}
     </main>
   );
 }
