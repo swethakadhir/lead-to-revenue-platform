@@ -15,7 +15,7 @@ export async function saveChatbotSettings(_state: ChatbotSettingsState, formData
   if (!parsed.success) return { error: "Check the chatbot settings." };
   const { error } = await (await createClient()).from("chatbot_configs").update({ name: parsed.data.name, welcome_message: parsed.data.welcome, fallback_message: parsed.data.fallback, confirmation_message: parsed.data.confirmation, branding: { primary_color: parsed.data.color, position: parsed.data.position }, status: parsed.data.status, enabled: formData.get("enabled") === "on", lead_capture_enabled: formData.get("leadCapture") === "on" }).eq("tenant_id", tenant.id);
   if (error) return { error: "Could not save chatbot settings." };
-  revalidatePath("/app/settings/chatbot"); return { error: null, message: "Chatbot settings saved." };
+  revalidatePath("/app/settings/chatbot"); revalidatePath("/app/settings/chatbot/preview"); return { error: null, message: "Chatbot settings saved." };
 }
 
 export async function saveChatbotNode(_state: ChatbotSettingsState, formData: FormData): Promise<ChatbotSettingsState> {
@@ -23,7 +23,7 @@ export async function saveChatbotNode(_state: ChatbotSettingsState, formData: Fo
   const id = String(formData.get("id") ?? ""); const content = String(formData.get("content") ?? "").trim();
   if (!id || content.length > 4000) return { error: "Enter valid flow text." };
   const { error } = await (await createClient()).from("chatbot_nodes").update({ content }).eq("id", id).eq("tenant_id", tenant.id);
-  if (error) return { error: "Could not save flow text." }; revalidatePath("/app/settings/chatbot"); return { error: null, message: "Flow text saved." };
+  if (error) return { error: "Could not save flow text." }; revalidatePath("/app/settings/chatbot/advanced"); revalidatePath("/app/settings/chatbot/preview"); return { error: null, message: "Flow text saved." };
 }
 
 export async function saveChatbotEdge(_state: ChatbotSettingsState, formData: FormData): Promise<ChatbotSettingsState> {
@@ -31,5 +31,5 @@ export async function saveChatbotEdge(_state: ChatbotSettingsState, formData: Fo
   const id = String(formData.get("id") ?? ""); const label = String(formData.get("label") ?? "").trim();
   if (!id || !label || label.length > 160) return { error: "Enter a valid option label." };
   const { error } = await (await createClient()).from("chatbot_edges").update({ label }).eq("id", id).eq("tenant_id", tenant.id);
-  if (error) return { error: "Could not save this option." }; revalidatePath("/app/settings/chatbot"); return { error: null, message: "Option saved." };
+  if (error) return { error: "Could not save this option." }; revalidatePath("/app/settings/chatbot/advanced"); revalidatePath("/app/settings/chatbot/preview"); return { error: null, message: "Option saved." };
 }

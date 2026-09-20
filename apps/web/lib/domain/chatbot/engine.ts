@@ -3,12 +3,13 @@ import "server-only";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TableRow } from "@/lib/supabase/database.types";
+import { isPublicWidgetAvailable } from "./policy";
 
 type Config = TableRow<"chatbot_configs">;
 type Node = TableRow<"chatbot_nodes">;
 type Edge = TableRow<"chatbot_edges">;
 type Context = Record<string, Json | undefined>;
-export type ChatView = { conversationId: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; routeHint?: "RAG_REQUIRED" };
+export type ChatView = { conversationId: string; assistantName: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; routeHint?: "RAG_REQUIRED" };
 
 export const publicChatInput = z.object({
   widgetId: z.uuid(), sessionId: z.uuid(),
@@ -21,8 +22,8 @@ function publicConfigFilter(widgetId: string) { return { widgetId }; }
 
 async function resolvePublicConfig(widgetId: string) {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("chatbot_configs").select("*").eq("widget_id", publicConfigFilter(widgetId).widgetId).eq("status", "published").eq("enabled", true).maybeSingle();
-  if (error || !data) return null;
+  const { data, error } = await admin.from("chatbot_configs").select("*").eq("widget_id", publicConfigFilter(widgetId).widgetId).maybeSingle();
+  if (error || !data || !isPublicWidgetAvailable(data.status, data.enabled)) return null;
   return data as Config;
 }
 
@@ -41,7 +42,7 @@ function optionsFor(edges: Edge[], nodeId: string) { return edges.filter((edge) 
 async function view(config: Config, conversation: TableRow<"conversations">, nodes: Node[], edges: Edge[], messages: { sender_type: string; content: string }[], routeHint?: "RAG_REQUIRED"): Promise<ChatView> {
   const node = nodes.find((item) => item.id === conversation.current_node_id) ?? nodes.find((item) => item.id === config.root_node_id);
   if (!node) throw new Error("The chatbot flow has no root node.");
-  return { conversationId: conversation.id, node: { key: node.key, type: node.node_type, content: node.content, captureType: node.capture_type }, options: optionsFor(edges, node.id), messages: messages.map((message) => ({ sender: message.sender_type, content: message.content })), status: conversation.status, branding: config.branding, routeHint };
+  return { conversationId: conversation.id, assistantName: config.name, node: { key: node.key, type: node.node_type, content: node.content, captureType: node.capture_type }, options: optionsFor(edges, node.id), messages: messages.map((message) => ({ sender: message.sender_type, content: message.content })), status: conversation.status, branding: config.branding, routeHint };
 }
 
 async function append(tenantId: string, conversationId: string, nodeId: string | null, sender: "visitor" | "bot" | "system", type: "text" | "option" | "capture" | "fallback" | "action_placeholder", content: string, metadata: Json = {}) {
