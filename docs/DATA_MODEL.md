@@ -426,6 +426,10 @@ Add uniqueness where possible for provider/external message IDs.
 
 `leads.status` is the single lifecycle state. It includes additive states for requirement understanding, booking readiness/in-progress, and human intervention while retaining existing values. A confirmed appointment maps its linked lead to `converted`; contact capture never does so. `human_interventions` links a tenant to optional lead/contact/conversation records, reason, queue status, request/resolution timestamps, resolution notes, and an internal handler. `platform_operators` is a separate internal-user allowlist and must never be conflated with tenant membership.
 
+### `tenant_ai_configs`
+
+One optional, tenant-owned, operator-managed non-secret configuration row for AI routing. It contains `enabled`, provider name, and `knowledge_scope`; API keys never belong in this table. Its RLS permits only active `platform_operators`. Conversation message `metadata` stores small operational routing facts (route, validated intent/confidence, mapped field keys, and provider failure category) but never hidden reasoning or credentials.
+
 ---
 
 ## 8. Marketing / Attribution Tables

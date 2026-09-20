@@ -223,7 +223,13 @@ The widget invokes one controlled application boundary, not browser Supabase acc
 
 The engine owns the customer journey: deterministic requirement collection, qualification state, booking readiness, and human-intervention requests all persist in Supabase. A confirmed appointment is the conversion event and updates the linked lead to `converted`; opportunity history is not rewritten. Free text at a deterministic menu records a fallback response while preserving the current node. It can only be captured when the current node explicitly expects that field.
 
-`platform_operators` is a deliberately small allowlist separate from `tenant_members`. Its RLS policies grant authorized internal users the read/update surfaces required for cross-tenant operations. Tenant roles never imply platform access. `human_interventions` are tenant-scoped internal queue records; future n8n notifications and Dify/RAG routing are separate adapters and remain unimplemented.
+`platform_operators` is a deliberately small allowlist separate from `tenant_members`. Its RLS policies grant authorized internal users the read/update surfaces required for cross-tenant operations. Tenant roles never imply platform access. `human_interventions` are tenant-scoped internal queue records.
+
+### Intelligent query routing and Dify/RAG
+
+The chatbot retains deterministic precedence: expected capture input, configured graph transition, structured business data, AI/RAG free text, then human intervention. Only free text outside a capture state may enter the `AIService`; AI never advances graph nodes or bypasses capture validation. `DifyAIService` is the initial provider and runs server-side only. It must return a validated JSON result (intent, confidence, optional requirement/field values, answer, and intervention recommendation) before any application mutation.
+
+`tenant_ai_configs` holds non-secret tenant routing settings, including an explicit knowledge scope. Dify credentials stay in deployment environment variables. Every Dify request receives tenant/conversation identity derived from the trusted chatbot configuration and persisted conversation—not browser input—and uses a tenant+conversation-scoped Dify end-user ID. The Dify workflow must use the supplied `tenant_id`/`knowledge_scope` only to filter that tenant's knowledge. Knowledge answers append to the message history while retaining `current_node_id`, so a detour resumes the pending deterministic question. Provider timeout, unavailable, or malformed output produces a safe fallback and operational message metadata; it does not corrupt lifecycle data.
 
 Incorrect:
 
