@@ -45,6 +45,12 @@ export type Database = {
         Update: { name?: string; is_required?: boolean; score_delta?: number; is_active?: boolean };
         Relationships: [];
       };
+      tenant_ai_configs: {
+        Row: { id: string; tenant_id: string; enabled: boolean; provider: string; knowledge_scope: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; enabled?: boolean; provider?: string; knowledge_scope: string };
+        Update: { enabled?: boolean; provider?: string; knowledge_scope?: string; updated_at?: string };
+        Relationships: [];
+      };
       chatbot_configs: {
         Row: { id: string; tenant_id: string; widget_id: string; name: string; welcome_message: string; fallback_message: string; confirmation_message: string; root_node_id: string | null; status: string; enabled: boolean; branding: Json; lead_capture_enabled: boolean; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; widget_id?: string; name?: string; welcome_message?: string; fallback_message?: string; confirmation_message?: string; root_node_id?: string | null; status?: string; enabled?: boolean; branding?: Json; lead_capture_enabled?: boolean };

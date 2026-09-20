@@ -59,6 +59,8 @@ Do not turn the product into:
 
 The platform may integrate with existing CRM, ERP, calendar, payment, ad, or communication systems instead of replacing them.
 
+AI/RAG is an assistive layer: it can understand free-text requirements and answer tenant-specific knowledge questions, while the application retains the deterministic journey, qualification rules, booking lifecycle, and permanent data.
+
 ## 6. Product Strategy
 The business should evolve in this order:
 

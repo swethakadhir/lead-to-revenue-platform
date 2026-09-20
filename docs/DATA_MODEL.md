@@ -426,6 +426,18 @@ Add uniqueness where possible for provider/external message IDs.
 
 `leads.status` is the single lifecycle state. It includes additive states for requirement understanding, booking readiness/in-progress, and human intervention while retaining existing values. A confirmed appointment maps its linked lead to `converted`; contact capture never does so. `human_interventions` links a tenant to optional lead/contact/conversation records, reason, queue status, request/resolution timestamps, resolution notes, and an internal handler. `platform_operators` is a separate internal-user allowlist and must never be conflated with tenant membership.
 
+### `tenant_ai_configs`
+
+One optional, tenant-owned, operator-managed non-secret configuration row for AI routing. It contains `enabled`, provider name, and `knowledge_scope`; API keys never belong in this table. Its RLS permits only active `platform_operators`. Conversation message `metadata` stores small operational routing facts (route, validated intent/confidence, mapped field keys, and provider failure category) but never hidden reasoning or credentials.
+
+### Journey and action foundation
+
+`lead_journeys` is a one-row-per-lead durable journey projection; it complements rather than replaces `leads`, `appointments`, and `followups`. `journey_events` records meaningful transitions. `action_jobs` holds tenant-scoped deferred work with a unique `(tenant_id, idempotency_key)`, due/retry timestamps, claim status, attempt limits, and safe error categories. Only platform operators can read these internal operational records through RLS; future n8n uses a controlled, atomic claim/complete interface. Dify's current direct knowledge retrieval still requires Dify-side tenant metadata filtering or dataset isolation before multi-tenant production use.
+
+`tenant_settings.followup_defaults` is the tenant-scoped follow-up policy JSON. The initial schema supports `enabled`, existing `delay_days`, `max_attempts`, and stop flags for customer reply, qualification, booking, conversion, and an open intervention. It defaults conservatively to one day after meaningful activity and a maximum of three automated attempts; templates/tenants may override it. `followups.automation_key` is nullable so manual records remain unchanged; non-null keys are unique per tenant and prevent an orchestration retry from creating duplicate business follow-ups. Cancelling a pending follow-up cancels its pending/retry action job without deleting audit history.
+
+`conversations.context` also holds a small internal `_journey` object for a pending configured field and validated booking intent. It is tenant-scoped with its conversation, does not duplicate `leads.lead_data`, and lets a detour resume the same configured question across messages or sessions. Structured answers continue to be stored only in `leads.lead_data`; the context state is continuation metadata rather than a second lead record.
+
 ---
 
 ## 8. Marketing / Attribution Tables

@@ -4,12 +4,15 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TableRow } from "@/lib/supabase/database.types";
 import { acceptsCaptureInput, isPublicWidgetAvailable } from "./policy";
+import { getAIService } from "@/lib/domain/ai";
+import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
+import { evaluateQualification } from "./qualification";
 
 type Config = TableRow<"chatbot_configs">;
 type Node = TableRow<"chatbot_nodes">;
 type Edge = TableRow<"chatbot_edges">;
 type Context = Record<string, Json | undefined>;
-export type ChatView = { conversationId: string; assistantName: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; routeHint?: "RAG_REQUIRED" };
+export type ChatView = { conversationId: string; assistantName: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; routeHint?: "RAG_REQUIRED" | "AI_UNAVAILABLE" };
 
 export const publicChatInput = z.object({
   widgetId: z.uuid(), sessionId: z.uuid(),
@@ -39,7 +42,7 @@ async function graph(config: Config) {
 
 function optionsFor(edges: Edge[], nodeId: string) { return edges.filter((edge) => edge.source_node_id === nodeId && !edge.is_default).map((edge) => ({ id: edge.id, label: edge.label })); }
 
-async function view(config: Config, conversation: TableRow<"conversations">, nodes: Node[], edges: Edge[], messages: { sender_type: string; content: string }[], routeHint?: "RAG_REQUIRED"): Promise<ChatView> {
+async function view(config: Config, conversation: TableRow<"conversations">, nodes: Node[], edges: Edge[], messages: { sender_type: string; content: string }[], routeHint?: "RAG_REQUIRED" | "AI_UNAVAILABLE"): Promise<ChatView> {
   const node = nodes.find((item) => item.id === conversation.current_node_id) ?? nodes.find((item) => item.id === config.root_node_id);
   if (!node) throw new Error("The chatbot flow has no root node.");
   return { conversationId: conversation.id, assistantName: config.name, node: { key: node.key, type: node.node_type, content: node.content, captureType: node.capture_type }, options: optionsFor(edges, node.id), messages: messages.map((message) => ({ sender: message.sender_type, content: message.content })), status: conversation.status, branding: config.branding, routeHint };
@@ -80,11 +83,65 @@ async function maybeCreateLead(config: Config, conversation: TableRow<"conversat
   // Required dynamic fields are enforced by the existing DB trigger. This route only
   // creates a lead after a flow has supplied all configured required values.
   if ((fields ?? []).some((field) => field.required && leadData[field.key] === undefined)) return conversation;
-  const { data: lead, error: leadError } = await admin.from("leads").insert({ tenant_id: config.tenant_id, contact_id: contactId, lead_data: leadData }).select("id").single();
+  const { data: rules, error: rulesError } = await admin.from("qualification_rules").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
+  if (rulesError) throw rulesError;
+  const qualification = evaluateQualification((rules ?? []) as TableRow<"qualification_rules">[], context);
+  const { data: lead, error: leadError } = await admin.from("leads").insert({ tenant_id: config.tenant_id, contact_id: contactId, lead_data: leadData, status: qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying", qualification_status: qualification.qualificationStatus, qualification_score: qualification.score }).select("id").single();
   if (leadError || !lead) throw leadError ?? new Error("Lead creation failed");
   const { data: updated, error: updateError } = await admin.from("conversations").update({ contact_id: contactId, lead_id: lead.id, context, last_activity_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
   if (updateError || !updated) throw updateError ?? new Error("Conversation association failed");
   return updated as TableRow<"conversations">;
+}
+
+async function applyValidatedAIResult(config: Config, conversation: TableRow<"conversations">, current: Node, text: string) {
+  const admin = createAdminClient();
+  const [{ data: aiConfig, error: aiConfigError }, { data: fields, error: fieldsError }] = await Promise.all([
+    admin.from("tenant_ai_configs").select("*").eq("tenant_id", config.tenant_id).eq("enabled", true).maybeSingle(),
+    admin.from("lead_field_definitions").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true),
+  ]);
+  if (aiConfigError || fieldsError) throw aiConfigError ?? fieldsError;
+  if (!aiConfig) {
+    await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "ai_unconfigured", provider: "none" });
+    return { conversation, routeHint: "AI_UNAVAILABLE" as const };
+  }
+  const context = asContext(conversation.context);
+  const result = await getAIService().understandMessage({ tenantId: config.tenant_id, conversationId: conversation.id, message: text, currentNodeKey: current.key, context, knowledgeScope: aiConfig.knowledge_scope, configuredFields: (fields ?? []).map((field) => ({ key: field.key, label: field.label, fieldType: field.field_type, options: fieldOptions(field) })) });
+  if (!result.ok) {
+    await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "ai_failure", provider: result.provider, failure_category: result.category });
+    return { conversation, routeHint: "AI_UNAVAILABLE" as const };
+  }
+  const accepted: Context = {};
+  for (const field of fields ?? []) {
+    const parsed = validateDynamicJsonValue(field, result.result.extracted_fields[field.key]);
+    if (!parsed.error && parsed.value !== undefined) accepted[field.key] = parsed.value;
+  }
+  const requirement = result.result.requirement;
+  if (requirement && (fields ?? []).some((field) => field.key === "requirement")) accepted.requirement = requirement;
+  const nextContext = { ...context, ...accepted };
+  const { data: rules, error: rulesError } = await admin.from("qualification_rules").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
+  if (rulesError) throw rulesError;
+  const qualification = evaluateQualification((rules ?? []) as TableRow<"qualification_rules">[], nextContext);
+  const updates: { context: Context; last_activity_at: string; status?: string } = { context: nextContext, last_activity_at: new Date().toISOString() };
+  let status = conversation.status;
+  const intervention = result.result.human_intervention_required || result.result.intent === "human_request";
+  if (intervention) { status = "handoff"; updates.status = status; }
+  const { data: updated, error: updateError } = await admin.from("conversations").update(updates).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
+  if (updateError || !updated) throw updateError ?? new Error("Conversation update failed");
+  if (conversation.lead_id) {
+    const { data: lead, error: leadError } = await admin.from("leads").select("lead_data").eq("id", conversation.lead_id).eq("tenant_id", config.tenant_id).single();
+    if (leadError || !lead) throw leadError ?? new Error("Lead not found");
+    const leadStatus = intervention ? "human_intervention" : result.result.intent === "booking_request" ? "booking_ready" : qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying";
+    const { error: leadUpdateError } = await admin.from("leads").update({ lead_data: { ...asContext(lead.lead_data), ...accepted }, status: leadStatus, qualification_status: qualification.qualificationStatus, qualification_score: qualification.score }).eq("id", conversation.lead_id).eq("tenant_id", config.tenant_id);
+    if (leadUpdateError) throw leadUpdateError;
+  }
+  if (intervention) {
+    const { data: existing, error: existingError } = await admin.from("human_interventions").select("id").eq("tenant_id", config.tenant_id).eq("conversation_id", conversation.id).in("status", ["open", "in_progress"]).maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) { const { error: interventionError } = await admin.from("human_interventions").insert({ tenant_id: config.tenant_id, conversation_id: conversation.id, lead_id: conversation.lead_id, contact_id: conversation.contact_id, reason: result.result.human_intervention_reason || "Customer requested human assistance." }); if (interventionError) throw interventionError; }
+  }
+  const response = result.result.answer || result.result.suggested_next_question || config.fallback_message;
+  await append(config.tenant_id, conversation.id, current.id, "bot", "text", response, { route: intervention ? "human_intervention" : "ai_understanding", intent: result.result.intent, confidence: result.result.confidence, requirement: requirement ?? null, provider: result.provider, mapped_field_keys: Object.keys(accepted), missing_field_keys: qualification.missingFieldKeys });
+  return { conversation: updated as TableRow<"conversations">, routeHint: undefined };
 }
 
 async function enter(config: Config, conversation: TableRow<"conversations">, destination: Node, context: Context, nodes: Node[], edges: Edge[]) {
@@ -133,7 +190,7 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   const activeConversation = conversation;
   if (input.action === "start" || input.action === "restart") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
   const current = nodes.find((node) => node.id === activeConversation.current_node_id); if (!current || activeConversation.status !== "active") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
-  let routeHint: "RAG_REQUIRED" | undefined;
+  let routeHint: "RAG_REQUIRED" | "AI_UNAVAILABLE" | undefined;
   if (input.action === "select") {
     const edge = edges.find((item) => item.id === input.edgeId && item.source_node_id === current.id);
     if (!edge) throw new Error("Invalid chatbot transition.");
@@ -144,7 +201,9 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
     const text = input.text ?? "";
     await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
     if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
-      await append(config.tenant_id, activeConversation.id, current.id, "bot", "fallback", config.fallback_message, { route_hint: "RAG_REQUIRED" }); routeHint = "RAG_REQUIRED";
+      // Current capture states remain protected: invalid capture text never reaches AI.
+      if (current.node_type === "capture") { await append(config.tenant_id, activeConversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "deterministic_capture_invalid" }); }
+      else { const ai = await applyValidatedAIResult(config, activeConversation, current, text); conversation = ai.conversation; routeHint = ai.routeHint; }
     } else {
       const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
       if (!destination) throw new Error("Capture node has no next step.");

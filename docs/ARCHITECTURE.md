@@ -223,7 +223,13 @@ The widget invokes one controlled application boundary, not browser Supabase acc
 
 The engine owns the customer journey: deterministic requirement collection, qualification state, booking readiness, and human-intervention requests all persist in Supabase. A confirmed appointment is the conversion event and updates the linked lead to `converted`; opportunity history is not rewritten. Free text at a deterministic menu records a fallback response while preserving the current node. It can only be captured when the current node explicitly expects that field.
 
-`platform_operators` is a deliberately small allowlist separate from `tenant_members`. Its RLS policies grant authorized internal users the read/update surfaces required for cross-tenant operations. Tenant roles never imply platform access. `human_interventions` are tenant-scoped internal queue records; future n8n notifications and Dify/RAG routing are separate adapters and remain unimplemented.
+`platform_operators` is a deliberately small allowlist separate from `tenant_members`. Its RLS policies grant authorized internal users the read/update surfaces required for cross-tenant operations. Tenant roles never imply platform access. `human_interventions` are tenant-scoped internal queue records.
+
+### Intelligent query routing and Dify/RAG
+
+The chatbot retains deterministic precedence: expected capture input, configured graph transition, structured business data, AI/RAG free text, then human intervention. Only free text outside a capture state may enter the `AIService`; AI never advances graph nodes or bypasses capture validation. `DifyAIService` is the initial provider and runs server-side only. It must return a validated JSON result (intent, confidence, optional requirement/field values, answer, and intervention recommendation) before any application mutation.
+
+`tenant_ai_configs` holds non-secret tenant routing settings, including an explicit knowledge scope. Dify credentials stay in deployment environment variables. Every Dify request receives tenant/conversation identity derived from the trusted chatbot configuration and persisted conversation—not browser input—and uses a tenant+conversation-scoped Dify end-user ID. The Dify workflow must use the supplied `tenant_id`/`knowledge_scope` only to filter that tenant's knowledge. Knowledge answers append to the message history while retaining `current_node_id`, so a detour resumes the pending deterministic question. Provider timeout, unavailable, or malformed output produces a safe fallback and operational message metadata; it does not corrupt lifecycle data.
 
 Incorrect:
 
@@ -305,6 +311,26 @@ Suggested states:
 - `completed`
 - `failed`
 - `cancelled`
+
+### Persistent journey and action ledger
+
+**Supabase remembers. n8n executes. Dify understands.** `lead_journeys` is the durable projection of a lead's generic journey stage, qualification/booking readiness, next expected action, due time, intervention block, and conversion timestamp. `journey_events` provides concise operational history. `action_jobs` is the authoritative ledger for deferred work; it is not an in-memory queue and does not depend on n8n being online.
+
+## Journey orchestration and re-engagement
+
+The application deterministically evaluates trusted lead, configured-field, qualification-rule, appointment, intervention, conversation, and follow-up state after meaningful events. It projects one normalized journey stage and next action; Dify may suggest facts but never chooses a stage, schedules work, or converts a lead. If an eligible lead is inactive, the application inserts one idempotent automated follow-up. The existing database trigger then creates the one corresponding `action_job`, and n8n later executes and completes it.
+
+An inbound customer message cancels only pending system-created inactivity follow-ups, preserves the lead and its collected data, and re-evaluates from the new activity time. Converted, disqualified, dormant, booking-in-progress, and intervention-blocked leads do not receive ordinary automation. Completing a system follow-up records it as completed and re-evaluates the finite, tenant-configured cadence. There are no JavaScript timers.
+
+## Conversational journey continuation
+
+The chatbot keeps its tenant-scoped conversation graph for deterministic capture and stores a small internal pending-question state in the existing `conversations.context` JSON. After contact capture, the application uses the journey projection and active configured fields to ask the next missing field in deterministic order. A validated structured answer updates the existing lead data, qualification is re-evaluated, and the next question is selected without repeating already-known fields.
+
+A customer question during a pending capture is a detour, not a field answer. The chatbot preserves the capture/pending field, uses the existing deterministic-or-AI response route, and resumes the same question. A validated AI booking intent is persisted in conversation context; only deterministic qualification plus that intent reaches booking handoff. Dify never advances a journey, schedules work, confirms an appointment, or converts a lead.
+
+n8n accesses jobs only through the application’s token-authenticated internal worker API. It cannot receive a Supabase service-role key or select arbitrary tenant data. Claims have a lease so a crashed worker’s job becomes recoverable; external providers should receive the returned idempotency key where they support it.
+
+On startup, a future n8n worker queries due pending/retryable jobs, calls the atomic claim RPC, executes the claimed work, then records completion or a retryable/terminal outcome. Database row locking (`FOR UPDATE SKIP LOCKED`), status checks, idempotency keys, bounded exponential retry, and attempt limits prevent duplicate execution. Existing follow-ups and appointments remain their respective domain records.
 
 ---
 

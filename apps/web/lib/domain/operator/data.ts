@@ -29,5 +29,14 @@ export async function getOperatorTenant(tenantId: string) {
   ]);
   const failed = [leads, conversations, appointments, interventions].find((result) => result.error);
   if (failed?.error) throw failed.error;
-  return { tenant, leads: leads.data ?? [], conversations: conversations.data ?? [], appointments: appointments.data ?? [], interventions: interventions.data ?? [] };
+  const contactIds = [...new Set([...(leads.data ?? []).map((lead) => lead.contact_id), ...(conversations.data ?? []).map((conversation) => conversation.contact_id)].filter((id): id is string => Boolean(id)))];
+  const { data: contacts, error: contactsError } = contactIds.length ? await client.from("contacts").select("id, first_name, last_name, email, phone").in("id", contactIds).eq("tenant_id", tenantId) : { data: [], error: null };
+  if (contactsError) throw contactsError;
+  const contactById = new Map((contacts ?? []).map((contact) => [contact.id, contact]));
+  return {
+    tenant,
+    leads: (leads.data ?? []).map((lead) => ({ ...lead, contact: lead.contact_id ? contactById.get(lead.contact_id) ?? null : null })),
+    conversations: (conversations.data ?? []).map((conversation) => ({ ...conversation, contact: conversation.contact_id ? contactById.get(conversation.contact_id) ?? null : null })),
+    appointments: appointments.data ?? [], interventions: interventions.data ?? [],
+  };
 }

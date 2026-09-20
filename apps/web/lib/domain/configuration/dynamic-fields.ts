@@ -50,6 +50,15 @@ function parseValue(field: LeadFieldDefinition, raw: string | string[]): { value
   }
 }
 
+/** Validate untrusted, already-typed provider output without accepting arbitrary JSON. */
+export function validateDynamicJsonValue(field: LeadFieldDefinition, raw: unknown): { value?: Json; error?: string } {
+  if (raw === undefined || raw === null || raw === "") return {};
+  if (["text", "phone", "email", "textarea", "number", "currency", "select", "date", "datetime"].includes(field.field_type)) return parseValue(field, typeof raw === "string" ? raw : String(raw));
+  if (field.field_type === "multi_select") return parseValue(field, Array.isArray(raw) && raw.every((item) => typeof item === "string") ? raw : []);
+  if (field.field_type === "boolean") return parseValue(field, raw === true ? "true" : raw === false ? "false" : "");
+  return { error: "Unsupported field type." };
+}
+
 export function parseDynamicLeadData(fields: LeadFieldDefinition[], formData: FormData, existing?: Json): DynamicFieldResult {
   const previous: Record<string, Json | undefined> = existing && typeof existing === "object" && !Array.isArray(existing) ? { ...existing } : {};
   const data = { ...previous };
