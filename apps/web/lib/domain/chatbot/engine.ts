@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TableRow } from "@/lib/supabase/database.types";
-import { isPublicWidgetAvailable } from "./policy";
+import { acceptsCaptureInput, isPublicWidgetAvailable } from "./policy";
 
 type Config = TableRow<"chatbot_configs">;
 type Node = TableRow<"chatbot_nodes">;
@@ -143,13 +143,13 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   } else if (input.action === "text") {
     const text = input.text ?? "";
     await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
-    if (current.node_type !== "capture" || !current.capture_key || !validCapture(current, text)) {
+    if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
       await append(config.tenant_id, activeConversation.id, current.id, "bot", "fallback", config.fallback_message, { route_hint: "RAG_REQUIRED" }); routeHint = "RAG_REQUIRED";
     } else {
       const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
       if (!destination) throw new Error("Capture node has no next step.");
       const node = nodes.find((item) => item.id === destination.destination_node_id); if (!node) throw new Error("Invalid chatbot destination.");
-      conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key]: text.trim() }, nodes, edges);
+      conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
     }
   }
   return view(config, conversation, nodes, edges, await readMessages(conversation.id), routeHint);

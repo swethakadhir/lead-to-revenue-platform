@@ -9,6 +9,12 @@ export type Database = {
         Update: { full_name?: string; phone?: string | null; updated_at?: string };
         Relationships: [];
       };
+      platform_operators: {
+        Row: { user_id: string; role: string; status: string; created_at: string; updated_at: string };
+        Insert: { user_id: string; role?: string; status?: string; created_at?: string; updated_at?: string };
+        Update: { role?: string; status?: string; updated_at?: string };
+        Relationships: [];
+      };
       tenants: {
         Row: { id: string; name: string; slug: string; timezone: string; currency: string; status: string; industry_template_id: string | null; created_at: string; updated_at: string };
         Insert: { id?: string; name: string; slug: string; timezone: string; currency: string; status?: string; industry_template_id?: string | null; created_at?: string; updated_at?: string };
@@ -69,6 +75,12 @@ export type Database = {
         Update: Record<string, never>;
         Relationships: [];
       };
+      human_interventions: {
+        Row: { id: string; tenant_id: string; lead_id: string | null; contact_id: string | null; conversation_id: string | null; status: string; reason: string; requested_at: string; resolved_at: string | null; resolution_notes: string | null; handled_by: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id?: string | null; contact_id?: string | null; conversation_id?: string | null; status?: string; reason: string; requested_at?: string; resolved_at?: string | null; resolution_notes?: string | null; handled_by?: string | null };
+        Update: { status?: string; resolved_at?: string | null; resolution_notes?: string | null; handled_by?: string | null; updated_at?: string };
+        Relationships: [];
+      };
       tenant_members: {
         Row: { id: string; tenant_id: string; user_id: string; role: string; status: string; created_at: string };
         Insert: { id?: string; tenant_id: string; user_id: string; role: string; status?: string; created_at?: string };
@@ -119,6 +131,7 @@ export type Database = {
         Returns: Database["public"]["Tables"]["tenants"]["Row"];
       };
       apply_industry_template: { Args: { p_tenant_id: string; p_template_id: string }; Returns: undefined };
+      reset_chatbot_to_tenant_template: { Args: { p_tenant_id: string }; Returns: undefined };
       create_manual_lead: {
         Args: { p_tenant_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_status: string; p_assigned_user_id: string | null; p_lead_data: Json };
         Returns: string;

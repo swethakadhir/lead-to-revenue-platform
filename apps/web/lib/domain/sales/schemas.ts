@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Json } from "@/lib/supabase/database.types";
 
-export const leadStatuses = ["new", "contacted", "engaged", "qualifying", "qualified", "disqualified", "dormant", "converted"] as const;
+export const leadStatuses = ["new", "contacted", "engaged", "understanding_requirement", "qualifying", "qualified", "booking_ready", "booking_in_progress", "human_intervention", "disqualified", "dormant", "converted"] as const;
 export const qualificationStatuses = ["unqualified", "pending", "qualified", "disqualified"] as const;
 
 export type FormState = {

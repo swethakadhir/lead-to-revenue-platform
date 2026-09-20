@@ -5,24 +5,24 @@ import { useCallback, useEffect, useState } from "react";
 type Branding = { primary_color?: string; position?: "left" | "right" };
 type ChatView = { conversationId: string; assistantName: string; node: { type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: string | number | boolean | null | Branding | unknown[]; routeHint?: string };
 
-function sessionKey(widgetId: string) { return `ltr_chat_session_${widgetId}`; }
-function renewSessionId(widgetId: string) { const value = crypto.randomUUID(); sessionStorage.setItem(sessionKey(widgetId), value); return value; }
-function sessionId(widgetId: string) { return sessionStorage.getItem(sessionKey(widgetId)) ?? renewSessionId(widgetId); }
+function sessionKey(widgetId: string, scope: string) { return `ltr_chat_session_${scope}_${widgetId}`; }
+function renewSessionId(widgetId: string, scope: string) { const value = crypto.randomUUID(); sessionStorage.setItem(sessionKey(widgetId, scope), value); return value; }
+function sessionId(widgetId: string, scope: string) { return sessionStorage.getItem(sessionKey(widgetId, scope)) ?? renewSessionId(widgetId, scope); }
 function brandingOf(value: ChatView["branding"]): Branding { return value && typeof value === "object" && !Array.isArray(value) ? value as Branding : {}; }
 
-export function ChatWidget({ widgetId, floating = false, endpoint = "/api/chatbot" }: { widgetId: string; floating?: boolean; endpoint?: string }) {
+export function ChatWidget({ widgetId, floating = false, endpoint = "/api/chatbot", sessionScope = "public" }: { widgetId: string; floating?: boolean; endpoint?: string; sessionScope?: string }) {
   const [view, setView] = useState<ChatView | null>(null);
   const [open, setOpen] = useState(!floating);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const call = useCallback(async (body: Record<string, unknown>) => {
     setError("");
-    const activeSessionId = body.action === "restart" ? renewSessionId(widgetId) : sessionId(widgetId);
+    const activeSessionId = body.action === "restart" ? renewSessionId(widgetId, sessionScope) : sessionId(widgetId, sessionScope);
     const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ widgetId, sessionId: activeSessionId, ...body }) });
     const data = await response.json();
     if (!response.ok) { setError(data.error ?? "Chat is unavailable."); return; }
     setView(data);
-  }, [endpoint, widgetId]);
+  }, [endpoint, sessionScope, widgetId]);
   useEffect(() => {
     if (!open || view) return;
     const timer = window.setTimeout(() => { void call({ action: "start" }); }, 0);

@@ -29,3 +29,9 @@ Draft chatbots are previewable only through the authenticated tenant route. The 
 ## Deliberate Phase 5 boundary
 
 Unknown free text is persisted and returns the configured fallback. It makes no Dify, RAG, LLM, n8n, calendar, or external-channel call. Future work may place a query/intent router between deterministic handling and responses: predefined → database/business logic → Dify/RAG → AI, followed by a separately controlled action engine/n8n path. Public-launch rate limiting remains an edge/deployment responsibility; the current endpoint uses strict request validation.
+
+## Managed journey correction
+
+The chatbot is the first end-customer channel in a managed service, not a client-run CRM feature. Free text at a normal menu records the fallback and preserves the current menu state. Input is treated as a name, phone, email, or configured answer only when the conversation is explicitly at that capture node. Preview uses an isolated preview session but the same widget and engine as the public embed.
+
+Platform operators, rather than tenant members, own cross-client setup and intervention work. They can explicitly replace a tenant chatbot with the tenant-selected template starter flow after a destructive confirmation; applying a template alone never overwrites an existing chatbot. A future query router may add tenant-scoped Dify/RAG responses and later n8n actions without replacing the channel-neutral conversation state.
