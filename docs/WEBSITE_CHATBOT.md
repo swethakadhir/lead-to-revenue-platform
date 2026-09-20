@@ -1,13 +1,31 @@
 # Website chatbot and predefined conversation engine
 
-Phase 5 adds one multi-tenant website chatbot. It is an iframe widget (`/chatbot/widget?widget=<public-widget-id>`) so it is isolated from a client website’s CSS, scripts, and authentication state. The public ID is intentionally not a credential: it resolves only an enabled, published chatbot and exposes no dashboard or tenant-private API.
+Phase 5 is a managed, setup-first website chatbot product. It is not a self-service technical chatbot builder.
 
-The flow is data, not industry code. Each tenant owns one `chatbot_configs` row plus `chatbot_nodes` and `chatbot_edges`. A node is a generic message, choice, answer, capture, action placeholder, handoff, or end state; options are validated edges with optional context data. Dental, Salon, Interior Design, and Custom starter graphs are provisioned from template JSON. Global template changes never modify an existing tenant graph.
+## Who uses what
 
-Public widget traffic goes to one controlled Next.js Route Handler. The browser sends only the public widget ID, an anonymous UUID session ID, and an interaction. The server resolves a published/enabled config, loads a same-tenant graph, validates the current-node transition, persists the visitor and bot messages, and returns a normalized view. The browser never talks directly to Supabase and never receives service credentials. Invalid, disabled, draft, or cross-graph requests get no tenant detail.
+The platform implementation team sets up the industry template, deterministic conversation flow, lead fields, content, and website installation. Owner/admin client users can operate the business and make simple content changes. Their customers use the floating chatbot on the client website.
 
-`conversations` and `conversation_messages` are channel-neutral. Phase 5 uses `website`; later WhatsApp, Instagram, and Facebook adapters can normalize to the same model. A conversation retains node state, context, optional contact and lead links, status, and timestamps. Free text at a non-capture node is persisted and returns the configured fallback with the `RAG_REQUIRED` route hint. It makes no Dify or LLM request.
+Client users work in the operational application: Dashboard, Leads, Conversations, Pipeline, Appointments, Follow-ups, and Settings. The Conversations inbox shows normal customer/assistant transcripts, contact information when known, lead association, status, and activity time. It never exposes message JSON or graph internals.
 
-Capture nodes collect deterministic customer details. At the end of a configured flow, the server reuses a matching contact by email or phone where possible, creates a standard Phase 2 lead, stores permitted Phase 4 dynamic fields in `lead_data`, and links the conversation. Existing database validation still guards required/template fields. The action placeholder is visible in the model but performs no calendar, n8n, or external action in this phase.
+## Client settings
 
-Owners/admins configure publishing, enabled state, messages, basic branding, lead capture, and existing starter-flow text/option labels at `/app/settings/chatbot`; each mutation uses the existing audit trigger. Sales/front-desk/viewer roles can only read tenant chatbot/conversation data according to RLS. Future work should add a server-side query/intent router between message processing and responses: predefined → database/business logic → Dify/RAG → AI, followed by a separately controlled action engine/n8n path. Rate limiting is intentionally an edge/deployment responsibility before public launch; the route has strict schema and size validation but no distributed limiter yet.
+`/app/settings/chatbot` contains business-friendly controls only: assistant display name, welcome/fallback/confirmation messages, colour, button position, visitor detail capture, enabled state, publishing state, and a clear **Preview chatbot** action. Owners and admins may also enter explicitly named **Advanced setup** and **Install on website** pages; sales, front desk, and viewer roles cannot access that setup surface.
+
+Advanced setup preserves the deterministic flow editor without making node keys, database names, or routing IDs part of ordinary client work. A future explicit platform-admin role can separate our implementation team further without changing tenant security.
+
+## Customer-facing widget and embed
+
+The public website widget is an iframe rendered by Next.js at `/chatbot/widget?widget=<public-widget-id>`. It provides a floating responsive launcher, configurable bottom-left/right position, minimize/restart controls, option buttons, free-text input, and a normal chat panel. The authenticated preview simulates a client website and uses the exact same `ChatWidget` renderer and deterministic conversation engine as the public iframe.
+
+The implementation team or client web developer can copy the iframe from **Install on website** and paste it before the client website's closing `</body>` tag. The identifier is public and is not a credential. Iframe isolation keeps host-site styles and scripts separate from the widget.
+
+## Publishing and security
+
+Draft chatbots are previewable only through the authenticated tenant route. The public route resolves only a published and enabled configuration by its public widget ID. Disabled or draft widgets return no tenant detail. Browsers never access Supabase directly and never receive service credentials; the server validates each graph transition and writes conversations server-side. Existing RLS confines authenticated operational reads to tenant membership.
+
+`conversations` and `conversation_messages` are channel-neutral. Phase 5 uses `website`; future WhatsApp, Instagram, and Facebook adapters can normalize into the same model. When a configured capture flow completes, the server reuses or creates a contact, creates the standard lead with permitted dynamic `lead_data`, and links the conversation. Lead detail shows **Website chatbot** and links back to the transcript.
+
+## Deliberate Phase 5 boundary
+
+Unknown free text is persisted and returns the configured fallback. It makes no Dify, RAG, LLM, n8n, calendar, or external-channel call. Future work may place a query/intent router between deterministic handling and responses: predefined → database/business logic → Dify/RAG → AI, followed by a separately controlled action engine/n8n path. Public-launch rate limiting remains an edge/deployment responsibility; the current endpoint uses strict request validation.

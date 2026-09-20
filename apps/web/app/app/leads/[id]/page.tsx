@@ -9,12 +9,13 @@ import { contactName, getLead, getPipelineStages } from "@/lib/domain/sales/data
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
 import { getTenantConfiguration } from "@/lib/domain/configuration/data";
 import { displayDynamicValue } from "@/lib/domain/configuration/dynamic-fields";
+import { findConversationForLead } from "@/lib/domain/conversations/data";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const tenant = await getActiveTenant();
   if (!tenant) redirect("/app/create-business");
   const { id } = await params;
-  const [detail, stages, references, operations, configuration] = await Promise.all([getLead(tenant.id, id), getPipelineStages(tenant.id), getOperationalReferences(tenant.id), getLeadOperations(tenant.id, id), getTenantConfiguration(tenant.id)]);
+  const [detail, stages, references, operations, configuration, chatbotConversation] = await Promise.all([getLead(tenant.id, id), getPipelineStages(tenant.id), getOperationalReferences(tenant.id), getLeadOperations(tenant.id, id), getTenantConfiguration(tenant.id), findConversationForLead(tenant.id, id)]);
   if (!detail) notFound();
   const members = references.members;
   const canOperate = tenant.role !== "viewer";
@@ -32,6 +33,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-semibold">Business-specific details</h2><dl className="mt-3 grid gap-3 sm:grid-cols-2">{Object.entries(detail.lead.lead_data && typeof detail.lead.lead_data === "object" && !Array.isArray(detail.lead.lead_data) ? detail.lead.lead_data : {}).map(([key, value]) => <div key={key}><dt className="text-sm text-slate-500">{configuration.fields.find((field) => field.key === key)?.label ?? key.replaceAll("_", " ")}</dt><dd className="font-medium">{displayDynamicValue(value)}</dd></div>)}</dl></section>
+      {chatbotConversation && <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-5"><h2 className="text-lg font-semibold">Source</h2><p className="mt-1 text-sm text-slate-700">Website chatbot</p><Link className="mt-3 inline-block text-sm font-medium text-blue-700" href={`/app/conversations/${chatbotConversation.id}`}>View conversation →</Link></section>}
       <LeadOperations appointmentTypes={configuration.settings.appointment_types} appointments={operations.appointments} canOperate={canOperate} contactId={detail.lead.contact_id} followups={operations.followups} leadId={detail.lead.id} references={references} timezone={tenant.timezone} />
     </main>
   );

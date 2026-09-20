@@ -17,6 +17,7 @@ export default async function ProtectedAppLayout({ children }: { children: React
           <nav aria-label="Primary" className="flex flex-wrap items-center gap-1 text-sm">
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/dashboard">Dashboard</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/leads">Leads</Link>
+            <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/conversations">Conversations</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/pipeline">Pipeline</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/appointments">Appointments</Link>
             <Link className="rounded-lg px-3 py-2 hover:bg-slate-100" href="/app/followups">Follow-ups</Link>

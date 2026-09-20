@@ -2,34 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
 import { createClient } from "@/lib/supabase/server";
-import { ChatbotSettingsForm, EdgeForm, NodeForm } from "./chatbot-forms";
+import { ChatbotSettingsForm } from "./chatbot-forms";
+import { canManageAdvancedChatbotSetup, isPublicWidgetAvailable } from "@/lib/domain/chatbot/policy";
 
 export default async function ChatbotSettingsPage() {
   const tenant = await getActiveTenant();
   if (!tenant) redirect("/app/create-business");
-  const client = await createClient();
-  const [{ data: config }, { data: nodes }, { data: edges }] = await Promise.all([
-    client.from("chatbot_configs").select("*").eq("tenant_id", tenant.id).single(),
-    client.from("chatbot_nodes").select("*").eq("tenant_id", tenant.id).order("key"),
-    client.from("chatbot_edges").select("*").eq("tenant_id", tenant.id).order("display_order"),
-  ]);
+  const { data: config } = await (await createClient()).from("chatbot_configs").select("*").eq("tenant_id", tenant.id).single();
   if (!config) return <main className="p-8">Chatbot setup is unavailable for this business.</main>;
 
-  const editable = ["owner", "admin"].includes(tenant.role);
+  const editable = canManageAdvancedChatbotSetup(tenant.role);
+  const publicAvailable = isPublicWidgetAvailable(config.status, config.enabled);
   const widgetUrl = `/chatbot/widget?widget=${config.widget_id}`;
-  const publicAvailable = config.status === "published" && config.enabled;
 
-  return <main className="mx-auto max-w-5xl space-y-6 px-5 py-8">
+  return <main className="mx-auto max-w-4xl space-y-6 px-5 py-8">
     <Link className="text-sm text-blue-700" href="/app/settings">← Business settings</Link>
-    <header><h1 className="text-3xl font-semibold">Website chatbot</h1><p className="mt-1 text-slate-600">Deterministic starter flow. Free text returns the configured fallback; no AI is used.</p></header>
-    <section className="rounded-xl border bg-white p-5"><h2 className="mb-4 text-lg font-semibold">General and publishing</h2><ChatbotSettingsForm config={config} editable={editable} /></section>
-    <section className="rounded-xl border bg-white p-5">
-      <h2 className="text-lg font-semibold">Preview and embed</h2>
-      <Link className="mt-3 inline-block text-sm font-medium text-blue-700" href="/app/settings/chatbot/preview">Preview this draft securely →</Link>
-      <p className="mt-3 text-sm text-slate-600">After publishing, embed this iframe on the client website:</p>
-      <code className="mt-3 block overflow-auto rounded bg-slate-100 p-3 text-xs">{`<iframe src="${widgetUrl}" title="Chat with us" style="position:fixed;right:20px;bottom:20px;border:0;width:400px;height:680px"></iframe>`}</code>
-      {publicAvailable ? <Link className="mt-3 inline-block text-sm font-medium text-blue-700" href={widgetUrl} target="_blank">Open public widget</Link> : <p className="mt-3 text-sm text-amber-800">The public widget stays unavailable until this chatbot is enabled and published.</p>}
-    </section>
-    <section className="rounded-xl border bg-white p-5"><h2 className="text-lg font-semibold">Flow text</h2><div className="mt-4 grid gap-3">{(nodes ?? []).map((node) => <NodeForm editable={editable} key={node.id} node={node} />)}</div><h3 className="mt-6 font-semibold">Option labels</h3><div className="mt-3 grid gap-2">{(edges ?? []).map((edge) => <EdgeForm edge={edge} editable={editable} key={edge.id} />)}</div></section>
+    <header><p className="text-sm font-medium text-blue-700">{tenant.name}</p><h1 className="text-3xl font-semibold">Website chatbot</h1><p className="mt-1 text-slate-600">Keep the visitor experience clear and welcoming. Your implementation team manages the conversation structure separately.</p></header>
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Assistant and publishing</h2><ChatbotSettingsForm config={config} editable={editable} /></section>
+    <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2"><div><h2 className="text-lg font-semibold">Preview chatbot</h2><p className="mt-1 text-sm text-slate-600">See the same floating chat experience your website visitors will use. Drafts are safe to preview here.</p><Link className="mt-4 inline-block rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white" href="/app/settings/chatbot/preview">Preview chatbot</Link></div><div><h2 className="text-lg font-semibold">Website status</h2><p className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${publicAvailable ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{publicAvailable ? "Published and enabled" : config.status === "draft" ? "Draft — private preview only" : "Disabled — not visible to visitors"}</p><p className="mt-3 text-sm text-slate-600">{publicAvailable ? "The public website widget is available." : "Publish and enable the assistant when it is ready for visitors."}</p></div></section>
+    {editable && <section className="rounded-xl border border-slate-200 bg-slate-50 p-5"><h2 className="text-lg font-semibold">For your implementation team</h2><p className="mt-1 text-sm text-slate-600">Flow routing, prompts, and website installation are technical setup tasks.</p><div className="mt-4 flex flex-wrap gap-3"><Link className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium" href="/app/settings/chatbot/advanced">Advanced setup</Link><Link className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium" href="/app/settings/chatbot/install">Install on website</Link>{publicAvailable && <Link className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium" href={widgetUrl} target="_blank">Open public widget</Link>}</div></section>}
   </main>;
 }
