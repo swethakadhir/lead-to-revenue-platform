@@ -40,6 +40,12 @@ A reusable Lead-to-Revenue operating system that:
 - tracks conversions and revenue;
 - supports niche-specific templates without changing the application code.
 
+## Managed-service operating model
+
+The platform is a managed, automated Lead-to-Revenue system rather than a client-operated CRM. It has three surfaces: the end-customer channel experience, an internal operator workspace for our team, and a future simple client results portal. Configuration, intervention handling, and automation complexity belong to internal operators. The client portal is intentionally deferred until the engine produces reliable lifecycle data.
+
+For the current product definition, a **confirmed booking is a conversion**. Contact capture or booking interest alone is not a conversion. Industry templates configure the journey; they do not create industry-specific runtime applications.
+
 ## 5. What This Product Is Not
 Do not turn the product into:
 - a generic AI agency dashboard;

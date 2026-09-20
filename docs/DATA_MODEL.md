@@ -422,6 +422,10 @@ Add uniqueness where possible for provider/external message IDs.
 
 `chatbot_configs`, `chatbot_nodes`, and `chatbot_edges` hold a tenant-owned predefined graph. `conversations` and `conversation_messages` persist channel-neutral visitor/bot state; Phase 5 uses the `website` channel only. A public widget ID is safe to embed but resolves only a published/enabled configuration through a controlled server endpoint. Chatbot lead capture links to the existing contacts/leads tables and continues to use `leads.lead_data` for configurable answers.
 
+### Managed-journey additions
+
+`leads.status` is the single lifecycle state. It includes additive states for requirement understanding, booking readiness/in-progress, and human intervention while retaining existing values. A confirmed appointment maps its linked lead to `converted`; contact capture never does so. `human_interventions` links a tenant to optional lead/contact/conversation records, reason, queue status, request/resolution timestamps, resolution notes, and an internal handler. `platform_operators` is a separate internal-user allowlist and must never be conflated with tenant membership.
+
 ---
 
 ## 8. Marketing / Attribution Tables

@@ -458,3 +458,9 @@ The system should make it possible to answer:
 - Where did the best leads come from?
 
 That is the core Lead-to-Revenue promise.
+
+## Managed automated operating model
+
+The system is operated primarily by automation and our internal team. End customers use website chat first, with other channels later. Internal operators own configuration, conversation oversight, intervention handling, and future automation/AI controls. The future client portal is visibility and results oriented; it is not the operational control surface.
+
+Confirmed booking is the current conversion definition. The website chatbot first gathers configured requirement and qualification information, then reaches booking readiness; it must not claim conversion at contact capture or booking interest. Dify/RAG may later answer tenant-scoped unstructured questions without replacing deterministic state. n8n may later execute external actions while Supabase remains the source of truth.

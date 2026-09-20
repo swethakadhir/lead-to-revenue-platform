@@ -219,6 +219,12 @@ Customer → website iframe → channel adapter → message router → conversat
 
 The widget invokes one controlled application boundary, not browser Supabase access. Predefined flows are tenant-owned graph data and are resolved only when a public widget ID belongs to an enabled, published configuration. `conversations` and `conversation_messages` use a normalized channel field so future adapters can feed the same engine. Dify, n8n, live availability, and external channels remain out of scope for Phase 5.
 
+### Managed journey and internal operator boundary
+
+The engine owns the customer journey: deterministic requirement collection, qualification state, booking readiness, and human-intervention requests all persist in Supabase. A confirmed appointment is the conversion event and updates the linked lead to `converted`; opportunity history is not rewritten. Free text at a deterministic menu records a fallback response while preserving the current node. It can only be captured when the current node explicitly expects that field.
+
+`platform_operators` is a deliberately small allowlist separate from `tenant_members`. Its RLS policies grant authorized internal users the read/update surfaces required for cross-tenant operations. Tenant roles never imply platform access. `human_interventions` are tenant-scoped internal queue records; future n8n notifications and Dify/RAG routing are separate adapters and remain unimplemented.
+
 Incorrect:
 
 ```text
