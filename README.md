@@ -60,6 +60,8 @@ Appointments and follow-ups are available at `/app/appointments` and `/app/follo
 
 Owners/admins can rename and reorder lead fields, change required/active status and select options, rename pipeline stages, and edit appointment types at `/app/settings`. Viewers are read-only. Configuration updates are written to `audit_logs`. No n8n, Dify, or external event delivery is part of Phase 4. See [Industry template architecture](docs/INDUSTRY_TEMPLATES.md).
 
+Phase 5 adds a tenant-configured deterministic website chatbot at `/app/settings/chatbot`. Publish an enabled chatbot, then use the displayed iframe URL in a client website. The widget is public but resolves only a published configuration, routes all interaction through a Next.js server endpoint, and creates standard contacts/leads when its capture flow completes. It does not call Dify, an LLM, n8n, or external channels. See [website chatbot architecture](docs/WEBSITE_CHATBOT.md).
+
 ### Verification commands
 
     pnpm lint

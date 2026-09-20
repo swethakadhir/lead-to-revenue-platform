@@ -207,6 +207,18 @@ Return HTTP 200
 Async processing begins
 ```
 
+### Website chatbot (Phase 5)
+
+The public website widget is an iframe rendered by Next.js. Its public request path is:
+
+```text
+Customer → website iframe → channel adapter → message router → conversation state
+         → query / intent router (predefined now; database, RAG and AI later)
+         → action engine (placeholder now; n8n later) → Supabase → dashboard
+```
+
+The widget invokes one controlled application boundary, not browser Supabase access. Predefined flows are tenant-owned graph data and are resolved only when a public widget ID belongs to an enabled, published configuration. `conversations` and `conversation_messages` use a normalized channel field so future adapters can feed the same engine. Dify, n8n, live availability, and external channels remain out of scope for Phase 5.
+
 Incorrect:
 
 ```text

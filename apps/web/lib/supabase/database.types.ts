@@ -39,6 +39,36 @@ export type Database = {
         Update: { name?: string; is_required?: boolean; score_delta?: number; is_active?: boolean };
         Relationships: [];
       };
+      chatbot_configs: {
+        Row: { id: string; tenant_id: string; widget_id: string; name: string; welcome_message: string; fallback_message: string; confirmation_message: string; root_node_id: string | null; status: string; enabled: boolean; branding: Json; lead_capture_enabled: boolean; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; widget_id?: string; name?: string; welcome_message?: string; fallback_message?: string; confirmation_message?: string; root_node_id?: string | null; status?: string; enabled?: boolean; branding?: Json; lead_capture_enabled?: boolean };
+        Update: { name?: string; welcome_message?: string; fallback_message?: string; confirmation_message?: string; status?: string; enabled?: boolean; branding?: Json; lead_capture_enabled?: boolean };
+        Relationships: [];
+      };
+      chatbot_nodes: {
+        Row: { id: string; tenant_id: string; chatbot_config_id: string; key: string; node_type: string; content: string; capture_key: string | null; capture_type: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; chatbot_config_id: string; key: string; node_type: string; content?: string; capture_key?: string | null; capture_type?: string | null };
+        Update: { content?: string; capture_key?: string | null; capture_type?: string | null };
+        Relationships: [];
+      };
+      chatbot_edges: {
+        Row: { id: string; tenant_id: string; chatbot_config_id: string; source_node_id: string; destination_node_id: string; label: string; display_order: number; set_context: Json; is_default: boolean; created_at: string };
+        Insert: { id?: string; tenant_id: string; chatbot_config_id: string; source_node_id: string; destination_node_id: string; label?: string; display_order?: number; set_context?: Json; is_default?: boolean };
+        Update: { label?: string; display_order?: number; set_context?: Json };
+        Relationships: [];
+      };
+      conversations: {
+        Row: { id: string; tenant_id: string; chatbot_config_id: string | null; channel: string; session_identifier: string; contact_id: string | null; lead_id: string | null; current_node_id: string | null; context: Json; status: string; started_at: string; last_activity_at: string; ended_at: string | null };
+        Insert: { id?: string; tenant_id: string; chatbot_config_id?: string | null; channel?: string; session_identifier: string; contact_id?: string | null; lead_id?: string | null; current_node_id?: string | null; context?: Json; status?: string };
+        Update: { contact_id?: string | null; lead_id?: string | null; current_node_id?: string | null; context?: Json; status?: string; last_activity_at?: string; ended_at?: string | null };
+        Relationships: [];
+      };
+      conversation_messages: {
+        Row: { id: string; tenant_id: string; conversation_id: string; node_id: string | null; sender_type: string; message_type: string; content: string; metadata: Json; created_at: string };
+        Insert: { id?: string; tenant_id: string; conversation_id: string; node_id?: string | null; sender_type: string; message_type: string; content?: string; metadata?: Json };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
       tenant_members: {
         Row: { id: string; tenant_id: string; user_id: string; role: string; status: string; created_at: string };
         Insert: { id?: string; tenant_id: string; user_id: string; role: string; status?: string; created_at?: string };

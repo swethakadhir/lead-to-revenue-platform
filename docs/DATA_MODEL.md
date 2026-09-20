@@ -418,6 +418,10 @@ Sender types:
 
 Add uniqueness where possible for provider/external message IDs.
 
+### Phase 5 chatbot conversation model
+
+`chatbot_configs`, `chatbot_nodes`, and `chatbot_edges` hold a tenant-owned predefined graph. `conversations` and `conversation_messages` persist channel-neutral visitor/bot state; Phase 5 uses the `website` channel only. A public widget ID is safe to embed but resolves only a published/enabled configuration through a controlled server endpoint. Chatbot lead capture links to the existing contacts/leads tables and continues to use `leads.lead_data` for configurable answers.
+
 ---
 
 ## 8. Marketing / Attribution Tables
