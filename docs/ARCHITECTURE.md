@@ -316,6 +316,8 @@ Suggested states:
 
 **Supabase remembers. n8n executes. Dify understands.** `lead_journeys` is the durable projection of a lead's generic journey stage, qualification/booking readiness, next expected action, due time, intervention block, and conversion timestamp. `journey_events` provides concise operational history. `action_jobs` is the authoritative ledger for deferred work; it is not an in-memory queue and does not depend on n8n being online.
 
+n8n accesses jobs only through the application’s token-authenticated internal worker API. It cannot receive a Supabase service-role key or select arbitrary tenant data. Claims have a lease so a crashed worker’s job becomes recoverable; external providers should receive the returned idempotency key where they support it.
+
 On startup, a future n8n worker queries due pending/retryable jobs, calls the atomic claim RPC, executes the claimed work, then records completion or a retryable/terminal outcome. Database row locking (`FOR UPDATE SKIP LOCKED`), status checks, idempotency keys, bounded exponential retry, and attempt limits prevent duplicate execution. Existing follow-ups and appointments remain their respective domain records.
 
 ---

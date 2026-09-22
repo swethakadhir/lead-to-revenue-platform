@@ -63,7 +63,7 @@ export type Database = {
         Update: Record<string, never>; Relationships: [];
       };
       action_jobs: {
-        Row: { id: string; tenant_id: string; lead_id: string | null; conversation_id: string | null; job_type: string; journey_stage: string | null; payload: Json; due_at: string; status: string; attempt_count: number; max_attempts: number; last_attempt_at: string | null; next_retry_at: string | null; completed_at: string | null; failed_at: string | null; last_error_category: string | null; last_error_message: string | null; idempotency_key: string; created_at: string; updated_at: string };
+        Row: { id: string; tenant_id: string; lead_id: string | null; conversation_id: string | null; job_type: string; journey_stage: string | null; payload: Json; due_at: string; status: string; attempt_count: number; max_attempts: number; last_attempt_at: string | null; claimed_at: string | null; lease_expires_at: string | null; next_retry_at: string | null; completed_at: string | null; failed_at: string | null; last_error_category: string | null; last_error_message: string | null; idempotency_key: string; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; lead_id?: string | null; conversation_id?: string | null; job_type: string; journey_stage?: string | null; payload?: Json; due_at?: string; status?: string; attempt_count?: number; max_attempts?: number; idempotency_key: string };
         Update: { status?: string; attempt_count?: number; last_attempt_at?: string | null; next_retry_at?: string | null; completed_at?: string | null; failed_at?: string | null; last_error_category?: string | null; last_error_message?: string | null }; Relationships: [];
       };
@@ -164,6 +164,8 @@ export type Database = {
       };
       claim_due_action_jobs: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
       complete_action_job: { Args: { p_job_id: string; p_success: boolean; p_error_category?: string | null; p_error_message?: string | null }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"] };
+      claim_due_action_jobs_worker: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
+      complete_action_job_worker: { Args: { p_job_id:string; p_success:boolean; p_retryable?:boolean; p_error_category?:string|null; p_error_message?:string|null }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"] };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
