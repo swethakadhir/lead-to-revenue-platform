@@ -21,13 +21,16 @@ export async function getOperatorTenant(tenantId: string) {
   const { data: tenant, error } = await client.from("tenants").select("*").eq("id", tenantId).maybeSingle();
   if (error) throw error;
   if (!tenant) return null;
-  const [leads, conversations, appointments, interventions] = await Promise.all([
+  const [leads, conversations, appointments, interventions, journeys, events, actionJobs] = await Promise.all([
     client.from("leads").select("*").eq("tenant_id", tenantId).order("updated_at", { ascending: false }).limit(25),
     client.from("conversations").select("*").eq("tenant_id", tenantId).order("last_activity_at", { ascending: false }).limit(10),
     client.from("appointments").select("*").eq("tenant_id", tenantId).in("status", ["scheduled", "confirmed"]).order("starts_at").limit(10),
     client.from("human_interventions").select("*").eq("tenant_id", tenantId).in("status", ["open", "in_progress"]).order("requested_at", { ascending: false }).limit(10),
+    client.from("lead_journeys").select("*").eq("tenant_id", tenantId).order("updated_at", { ascending: false }).limit(50),
+    client.from("journey_events").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20),
+    client.from("action_jobs").select("*").eq("tenant_id", tenantId).in("status", ["pending", "processing", "failed"]).order("due_at").limit(20),
   ]);
-  const failed = [leads, conversations, appointments, interventions].find((result) => result.error);
+  const failed = [leads, conversations, appointments, interventions, journeys, events, actionJobs].find((result) => result.error);
   if (failed?.error) throw failed.error;
   const contactIds = [...new Set([...(leads.data ?? []).map((lead) => lead.contact_id), ...(conversations.data ?? []).map((conversation) => conversation.contact_id)].filter((id): id is string => Boolean(id)))];
   const { data: contacts, error: contactsError } = contactIds.length ? await client.from("contacts").select("id, first_name, last_name, email, phone").in("id", contactIds).eq("tenant_id", tenantId) : { data: [], error: null };
@@ -37,6 +40,6 @@ export async function getOperatorTenant(tenantId: string) {
     tenant,
     leads: (leads.data ?? []).map((lead) => ({ ...lead, contact: lead.contact_id ? contactById.get(lead.contact_id) ?? null : null })),
     conversations: (conversations.data ?? []).map((conversation) => ({ ...conversation, contact: conversation.contact_id ? contactById.get(conversation.contact_id) ?? null : null })),
-    appointments: appointments.data ?? [], interventions: interventions.data ?? [],
+    appointments: appointments.data ?? [], interventions: interventions.data ?? [], journeys: journeys.data ?? [], events: events.data ?? [], actionJobs: actionJobs.data ?? [],
   };
 }

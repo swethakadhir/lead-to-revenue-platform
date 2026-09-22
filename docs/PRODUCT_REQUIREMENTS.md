@@ -468,3 +468,7 @@ Confirmed booking is the current conversion definition. The website chatbot firs
 ## Intelligent requirement understanding
 
 Free text may be sent to the server-side AI provider only after deterministic capture, configured options, and structured business answers have been ruled out. AI returns validated structured facts which are mapped only to active tenant field definitions. Qualification is evaluated by application rules, not model judgement. AI knowledge answers preserve the existing conversation state; low confidence, malformed output, timeout, and unavailable-provider conditions fall back safely or create a platform-operator intervention when the validated result requests one. A booking request sets booking readiness only; only a confirmed appointment converts a lead.
+
+## Persistent journey and automation foundation
+
+The application persists each lead's journey stage, next expected action, intervention block, and conversion state independently of automation workers. Deferred work is recorded with due dates, idempotency keys, attempts, retry timing, and terminal outcomes so a future n8n worker can safely recover due work after downtime. Internal operators can inspect this operational state; client-facing results remain limited to lead, qualification, booking, and conversion outcomes.
