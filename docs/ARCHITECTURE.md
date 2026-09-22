@@ -312,6 +312,12 @@ Suggested states:
 - `failed`
 - `cancelled`
 
+### Persistent journey and action ledger
+
+**Supabase remembers. n8n executes. Dify understands.** `lead_journeys` is the durable projection of a lead's generic journey stage, qualification/booking readiness, next expected action, due time, intervention block, and conversion timestamp. `journey_events` provides concise operational history. `action_jobs` is the authoritative ledger for deferred work; it is not an in-memory queue and does not depend on n8n being online.
+
+On startup, a future n8n worker queries due pending/retryable jobs, calls the atomic claim RPC, executes the claimed work, then records completion or a retryable/terminal outcome. Database row locking (`FOR UPDATE SKIP LOCKED`), status checks, idempotency keys, bounded exponential retry, and attempt limits prevent duplicate execution. Existing follow-ups and appointments remain their respective domain records.
+
 ---
 
 ## 8. Scheduling

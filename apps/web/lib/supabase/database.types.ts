@@ -51,6 +51,22 @@ export type Database = {
         Update: { enabled?: boolean; provider?: string; knowledge_scope?: string; updated_at?: string };
         Relationships: [];
       };
+      lead_journeys: {
+        Row: { id: string; tenant_id: string; lead_id: string; conversation_id: string | null; stage: string; last_completed_stage: string | null; next_expected_action: string | null; next_action_due_at: string | null; follow_up_required: boolean; blocked_by_human_intervention: boolean; converted_at: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id: string; conversation_id?: string | null; stage: string; last_completed_stage?: string | null; next_expected_action?: string | null; next_action_due_at?: string | null; follow_up_required?: boolean; blocked_by_human_intervention?: boolean; converted_at?: string | null };
+        Update: { conversation_id?: string | null; stage?: string; last_completed_stage?: string | null; next_expected_action?: string | null; next_action_due_at?: string | null; follow_up_required?: boolean; blocked_by_human_intervention?: boolean; converted_at?: string | null };
+        Relationships: [];
+      };
+      journey_events: {
+        Row: { id: string; tenant_id: string; lead_id: string; conversation_id: string | null; event_type: string; metadata: Json; created_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id: string; conversation_id?: string | null; event_type: string; metadata?: Json };
+        Update: Record<string, never>; Relationships: [];
+      };
+      action_jobs: {
+        Row: { id: string; tenant_id: string; lead_id: string | null; conversation_id: string | null; job_type: string; journey_stage: string | null; payload: Json; due_at: string; status: string; attempt_count: number; max_attempts: number; last_attempt_at: string | null; next_retry_at: string | null; completed_at: string | null; failed_at: string | null; last_error_category: string | null; last_error_message: string | null; idempotency_key: string; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id?: string | null; conversation_id?: string | null; job_type: string; journey_stage?: string | null; payload?: Json; due_at?: string; status?: string; attempt_count?: number; max_attempts?: number; idempotency_key: string };
+        Update: { status?: string; attempt_count?: number; last_attempt_at?: string | null; next_retry_at?: string | null; completed_at?: string | null; failed_at?: string | null; last_error_category?: string | null; last_error_message?: string | null }; Relationships: [];
+      };
       chatbot_configs: {
         Row: { id: string; tenant_id: string; widget_id: string; name: string; welcome_message: string; fallback_message: string; confirmation_message: string; root_node_id: string | null; status: string; enabled: boolean; branding: Json; lead_capture_enabled: boolean; created_at: string; updated_at: string };
         Insert: { id?: string; tenant_id: string; widget_id?: string; name?: string; welcome_message?: string; fallback_message?: string; confirmation_message?: string; root_node_id?: string | null; status?: string; enabled?: boolean; branding?: Json; lead_capture_enabled?: boolean };
@@ -146,6 +162,8 @@ export type Database = {
         Args: { p_tenant_id: string; p_lead_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_status: string; p_qualification_status: string; p_qualification_score: number | null; p_assigned_user_id: string | null; p_lead_data: Json };
         Returns: undefined;
       };
+      claim_due_action_jobs: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
+      complete_action_job: { Args: { p_job_id: string; p_success: boolean; p_error_category?: string | null; p_error_message?: string | null }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"] };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

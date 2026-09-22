@@ -7,6 +7,7 @@ import { acceptsCaptureInput, isPublicWidgetAvailable } from "./policy";
 import { getAIService } from "@/lib/domain/ai";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
+import { bookingReady } from "@/lib/domain/journey/state";
 
 function routerDiagnostic(event: string, details: Record<string, string | boolean> = {}) {
   if (process.env.NODE_ENV === "development") console.info("[ChatbotRouter]", event, details);
@@ -94,6 +95,8 @@ async function maybeCreateLead(config: Config, conversation: TableRow<"conversat
   if (leadError || !lead) throw leadError ?? new Error("Lead creation failed");
   const { data: updated, error: updateError } = await admin.from("conversations").update({ contact_id: contactId, lead_id: lead.id, context, last_activity_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
   if (updateError || !updated) throw updateError ?? new Error("Conversation association failed");
+  const { error: journeyError } = await admin.from("lead_journeys").update({ conversation_id: conversation.id }).eq("tenant_id", config.tenant_id).eq("lead_id", lead.id);
+  if (journeyError) throw journeyError;
   return updated as TableRow<"conversations">;
 }
 
@@ -137,7 +140,8 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   if (conversation.lead_id) {
     const { data: lead, error: leadError } = await admin.from("leads").select("lead_data").eq("id", conversation.lead_id).eq("tenant_id", config.tenant_id).single();
     if (leadError || !lead) throw leadError ?? new Error("Lead not found");
-    const leadStatus = intervention ? "human_intervention" : result.result.intent === "booking_request" ? "booking_ready" : qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying";
+    // Intent is not authority: booking readiness requires configured qualification rules.
+    const leadStatus = intervention ? "human_intervention" : result.result.intent === "booking_request" && bookingReady(qualification.qualificationStatus) ? "booking_ready" : qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying";
     const { error: leadUpdateError } = await admin.from("leads").update({ lead_data: { ...asContext(lead.lead_data), ...accepted }, status: leadStatus, qualification_status: qualification.qualificationStatus, qualification_score: qualification.score }).eq("id", conversation.lead_id).eq("tenant_id", config.tenant_id);
     if (leadUpdateError) throw leadUpdateError;
   }

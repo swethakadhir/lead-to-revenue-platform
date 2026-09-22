@@ -430,6 +430,10 @@ Add uniqueness where possible for provider/external message IDs.
 
 One optional, tenant-owned, operator-managed non-secret configuration row for AI routing. It contains `enabled`, provider name, and `knowledge_scope`; API keys never belong in this table. Its RLS permits only active `platform_operators`. Conversation message `metadata` stores small operational routing facts (route, validated intent/confidence, mapped field keys, and provider failure category) but never hidden reasoning or credentials.
 
+### Journey and action foundation
+
+`lead_journeys` is a one-row-per-lead durable journey projection; it complements rather than replaces `leads`, `appointments`, and `followups`. `journey_events` records meaningful transitions. `action_jobs` holds tenant-scoped deferred work with a unique `(tenant_id, idempotency_key)`, due/retry timestamps, claim status, attempt limits, and safe error categories. Only platform operators can read these internal operational records through RLS; future n8n uses a controlled, atomic claim/complete interface. Dify's current direct knowledge retrieval still requires Dify-side tenant metadata filtering or dataset isolation before multi-tenant production use.
+
 ---
 
 ## 8. Marketing / Attribution Tables
