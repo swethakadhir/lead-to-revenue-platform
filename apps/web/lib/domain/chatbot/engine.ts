@@ -8,6 +8,10 @@ import { getAIService } from "@/lib/domain/ai";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
 
+function routerDiagnostic(event: string, details: Record<string, string | boolean> = {}) {
+  if (process.env.NODE_ENV === "development") console.info("[ChatbotRouter]", event, details);
+}
+
 type Config = TableRow<"chatbot_configs">;
 type Node = TableRow<"chatbot_nodes">;
 type Edge = TableRow<"chatbot_edges">;
@@ -101,12 +105,15 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   ]);
   if (aiConfigError || fieldsError) throw aiConfigError ?? fieldsError;
   if (!aiConfig) {
+    routerDiagnostic("AI fallback used", { reason: "tenant_ai_disabled" });
     await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "ai_unconfigured", provider: "none" });
     return { conversation, routeHint: "AI_UNAVAILABLE" as const };
   }
   const context = asContext(conversation.context);
+  routerDiagnostic("AI route selected", { tenant_scoped: true, capture_state: false });
   const result = await getAIService().understandMessage({ tenantId: config.tenant_id, conversationId: conversation.id, message: text, currentNodeKey: current.key, context, knowledgeScope: aiConfig.knowledge_scope, configuredFields: (fields ?? []).map((field) => ({ key: field.key, label: field.label, fieldType: field.field_type, options: fieldOptions(field) })) });
   if (!result.ok) {
+    routerDiagnostic("AI fallback used", { reason: result.category });
     await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "ai_failure", provider: result.provider, failure_category: result.category });
     return { conversation, routeHint: "AI_UNAVAILABLE" as const };
   }
