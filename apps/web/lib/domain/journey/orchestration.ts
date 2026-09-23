@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { TableRow } from "@/lib/supabase/database.types";
 import { evaluateLeadJourney, type JourneyDecision } from "./orchestrator";
 import { evaluateQualification } from "@/lib/domain/chatbot/qualification";
+import { journeyConversationState } from "@/lib/domain/chatbot/journey-actions";
 
 type SyncReason = "customer_activity" | "lead_updated" | "intervention_resolved" | "follow_up_executed";
 
@@ -18,7 +19,7 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
     admin.from("human_interventions").select("id").eq("tenant_id", tenantId).eq("lead_id", leadId).in("status", ["open", "in_progress"]),
     admin.from("appointments").select("status").eq("tenant_id", tenantId).eq("lead_id", leadId).in("status", ["scheduled", "confirmed"]),
     admin.from("followups").select("id,status,automation_key").eq("tenant_id", tenantId).eq("lead_id", leadId),
-    admin.from("conversations").select("id,last_activity_at").eq("tenant_id", tenantId).eq("lead_id", leadId).order("last_activity_at", { ascending: false }).limit(1).maybeSingle(),
+    admin.from("conversations").select("id,last_activity_at,context").eq("tenant_id", tenantId).eq("lead_id", leadId).order("last_activity_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   const results = [leadResult, settingsResult, fieldsResult, rulesResult, journeyResult, interventionsResult, appointmentsResult, followupsResult, conversationResult];
   const failed = results.find((result) => result.error);
@@ -28,17 +29,19 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
   const contactResult = lead.contact_id ? await admin.from("contacts").select("email,phone").eq("tenant_id", tenantId).eq("id", lead.contact_id).maybeSingle() : { data: null, error: null };
   if (contactResult.error) throw contactResult.error;
   const followups = followupsResult.data ?? [];
+  const qualification = evaluateQualification((rulesResult.data ?? []) as TableRow<"qualification_rules">[], { ...(lead.lead_data && typeof lead.lead_data === "object" && !Array.isArray(lead.lead_data) ? lead.lead_data : {}), email: contactResult.data?.email ?? undefined, phone: contactResult.data?.phone ?? undefined });
   const decision = evaluateLeadJourney({
     lead,
     fields: fieldsResult.data ?? [],
     rules: (rulesResult.data ?? []) as TableRow<"qualification_rules">[],
-    qualification: evaluateQualification((rulesResult.data ?? []) as TableRow<"qualification_rules">[], { ...(lead.lead_data && typeof lead.lead_data === "object" && !Array.isArray(lead.lead_data) ? lead.lead_data : {}), email: contactResult.data?.email ?? undefined, phone: contactResult.data?.phone ?? undefined }),
+    qualification,
     contact: contactResult.data,
     hasActiveAppointment: (appointmentsResult.data ?? []).some((appointment) => appointment.status === "scheduled"),
     hasConfirmedAppointment: (appointmentsResult.data ?? []).some((appointment) => appointment.status === "confirmed"),
     interventionOpen: (interventionsResult.data ?? []).length > 0,
     pendingAutomatedFollowUp: followups.some((followup) => followup.status === "pending" && followup.automation_key),
     completedAutomatedFollowUps: followups.filter((followup) => followup.status === "completed" && followup.automation_key).length,
+    bookingIntent: journeyConversationState(conversationResult.data?.context && typeof conversationResult.data.context === "object" && !Array.isArray(conversationResult.data.context) ? conversationResult.data.context : {}).bookingIntent,
     lastMeaningfulActivityAt: conversationResult.data?.last_activity_at ?? null,
     policy: settingsResult.data?.followup_defaults ?? {},
   });
@@ -56,6 +59,14 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
   // configured finite follow-up limit transitions an otherwise active lead to dormant.
   if (decision.stage === "dormant" && lead.status !== "dormant") {
     const { error } = await admin.from("leads").update({ status: "dormant" }).eq("tenant_id", tenantId).eq("id", leadId);
+    if (error) throw error;
+  }
+  if (lead.qualification_status !== qualification.qualificationStatus || lead.qualification_score !== qualification.score) {
+    const { error } = await admin.from("leads").update({ qualification_status: qualification.qualificationStatus, qualification_score: qualification.score }).eq("tenant_id", tenantId).eq("id", leadId);
+    if (error) throw error;
+  }
+  if (decision.bookingReady && lead.status !== "booking_ready") {
+    const { error } = await admin.from("leads").update({ status: "booking_ready" }).eq("tenant_id", tenantId).eq("id", leadId);
     if (error) throw error;
   }
   const previous = journeyResult.data;

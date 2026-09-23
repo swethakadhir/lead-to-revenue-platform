@@ -436,6 +436,8 @@ One optional, tenant-owned, operator-managed non-secret configuration row for AI
 
 `tenant_settings.followup_defaults` is the tenant-scoped follow-up policy JSON. The initial schema supports `enabled`, existing `delay_days`, `max_attempts`, and stop flags for customer reply, qualification, booking, conversion, and an open intervention. It defaults conservatively to one day after meaningful activity and a maximum of three automated attempts; templates/tenants may override it. `followups.automation_key` is nullable so manual records remain unchanged; non-null keys are unique per tenant and prevent an orchestration retry from creating duplicate business follow-ups. Cancelling a pending follow-up cancels its pending/retry action job without deleting audit history.
 
+`conversations.context` also holds a small internal `_journey` object for a pending configured field and validated booking intent. It is tenant-scoped with its conversation, does not duplicate `leads.lead_data`, and lets a detour resume the same configured question across messages or sessions. Structured answers continue to be stored only in `leads.lead_data`; the context state is continuation metadata rather than a second lead record.
+
 ---
 
 ## 8. Marketing / Attribution Tables

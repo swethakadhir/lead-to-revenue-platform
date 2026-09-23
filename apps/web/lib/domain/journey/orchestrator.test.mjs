@@ -17,6 +17,10 @@ assert(staleProjection.stage === "qualification" && staleProjection.nextAction =
 const bookingInput = { ...base, lead: { ...base.lead, status: "booking_ready", lead_data: { requirement: "Consultation" } }, qualification: { qualificationStatus: "qualified", score: 50, missingFieldKeys: [] }, contact: { phone: "+919999999999", email: null } };
 const booking = evaluateLeadJourney(bookingInput);
 assert(booking.stage === "booking_ready" && booking.bookingReady, "qualified booking intent is booking ready, not converted");
+const validatedIntent = evaluateLeadJourney({ ...qualifyingInput, bookingIntent: true });
+assert(validatedIntent.stage === "booking_ready" && validatedIntent.bookingReady && validatedIntent.nextAction === "offer_booking", "validated booking intent reaches booking readiness only after deterministic qualification");
+const prematureIntent = evaluateLeadJourney({ ...base, bookingIntent: true });
+assert(!prematureIntent.bookingReady && prematureIntent.stage === "requirement_understanding", "booking intent cannot bypass missing required information");
 const inProgress = evaluateLeadJourney({ ...bookingInput, hasActiveAppointment: true });
 assert(inProgress.stage === "booking_in_progress" && inProgress.nextAction === "continue_booking", "unconfirmed appointment does not convert");
 const converted = evaluateLeadJourney({ ...bookingInput, hasConfirmedAppointment: true });

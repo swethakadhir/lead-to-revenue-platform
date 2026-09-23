@@ -8,7 +8,8 @@ import { getAIService } from "@/lib/domain/ai";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
 import { bookingReady } from "@/lib/domain/journey/state";
-import { recordLeadInboundActivity } from "@/lib/domain/journey/orchestration";
+import { recordLeadInboundActivity, syncLeadJourney } from "@/lib/domain/journey/orchestration";
+import { journeyConversationState, looksLikeBookingRequest, looksLikeCustomerQuestion, selectJourneyConversationAction, withJourneyConversationState } from "./journey-actions";
 
 function routerDiagnostic(event: string, details: Record<string, string | boolean> = {}) {
   if (process.env.NODE_ENV === "development") console.info("[ChatbotRouter]", event, details);
@@ -86,9 +87,6 @@ async function maybeCreateLead(config: Config, conversation: TableRow<"conversat
   if (fieldError) throw fieldError;
   const leadData: Context = {};
   for (const field of fields ?? []) if (context[field.key] !== undefined) leadData[field.key] = context[field.key];
-  // Required dynamic fields are enforced by the existing DB trigger. This route only
-  // creates a lead after a flow has supplied all configured required values.
-  if ((fields ?? []).some((field) => field.required && leadData[field.key] === undefined)) return conversation;
   const { data: rules, error: rulesError } = await admin.from("qualification_rules").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
   if (rulesError) throw rulesError;
   const qualification = evaluateQualification((rules ?? []) as TableRow<"qualification_rules">[], context);
@@ -128,7 +126,7 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   }
   const requirement = result.result.requirement;
   if (requirement && (fields ?? []).some((field) => field.key === "requirement")) accepted.requirement = requirement;
-  const nextContext = { ...context, ...accepted };
+  const nextContext = withJourneyConversationState({ ...context, ...accepted }, { bookingIntent: result.result.intent === "booking_request" ? true : undefined });
   const { data: rules, error: rulesError } = await admin.from("qualification_rules").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
   if (rulesError) throw rulesError;
   const qualification = evaluateQualification((rules ?? []) as TableRow<"qualification_rules">[], nextContext);
@@ -165,13 +163,68 @@ async function enter(config: Config, conversation: TableRow<"conversations">, de
     updated = (await admin.from("conversations").update({ current_node_id: current.id, context, last_activity_at: new Date().toISOString(), status: current.node_type === "end" ? "ended" : "active" }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single()).data as TableRow<"conversations">;
     const content = current.node_type === "end" ? config.confirmation_message || current.content : current.content;
     await append(config.tenant_id, updated.id, current.id, "bot", current.node_type === "action_placeholder" ? "action_placeholder" : "text", content);
-    if (current.node_type === "end") { updated = await maybeCreateLead(config, updated, context); break; }
+    if (current.node_type === "end") {
+      updated = await maybeCreateLead(config, updated, context);
+      if (updated.lead_id) {
+        const { data, error } = await admin.from("conversations").update({ status: "active", ended_at: null }).eq("id", updated.id).eq("tenant_id", config.tenant_id).select("*").single();
+        if (error || !data) throw error ?? new Error("Conversation continuation failed");
+        updated = data as TableRow<"conversations">;
+      }
+      break;
+    }
     const next = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
     if (!next || !["message", "answer"].includes(current.node_type)) break;
     const nextNode = nodes.find((node) => node.id === next.destination_node_id); if (!nextNode) break;
     current = nextNode;
   }
   return updated;
+}
+
+async function activeJourneyFields(tenantId: string) {
+  const { data, error } = await createAdminClient().from("lead_field_definitions").select("*").eq("tenant_id", tenantId).eq("is_active", true);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function advanceJourneyConversation(config: Config, conversation: TableRow<"conversations">, nodeId: string | null) {
+  if (!conversation.lead_id) return conversation;
+  const [decision, fields] = await Promise.all([syncLeadJourney(config.tenant_id, conversation.lead_id, "lead_updated"), activeJourneyFields(config.tenant_id)]);
+  if (!decision) return conversation;
+  const context = asContext(conversation.context);
+  const action = selectJourneyConversationAction({ decision, fields, state: journeyConversationState(context) });
+  let nextContext = context;
+  if (action.type === "ask_question") nextContext = withJourneyConversationState(context, { pendingFieldKey: action.field.key });
+  else if (action.type === "booking_handoff" || action.type === "complete_for_now") nextContext = withJourneyConversationState(context, { pendingFieldKey: null });
+  const { data, error } = await createAdminClient().from("conversations").update({ context: nextContext, status: action.type === "acknowledge_intervention" ? "handoff" : "active", last_activity_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
+  if (error || !data) throw error ?? new Error("Journey continuation failed");
+  await append(config.tenant_id, conversation.id, nodeId, "bot", "text", action.message, { route: "journey_action", action: action.type, pending_field_key: action.type === "ask_question" ? action.field.key : null });
+  return data as TableRow<"conversations">;
+}
+
+async function applyJourneyAnswer(config: Config, conversation: TableRow<"conversations">, current: Node, text: string) {
+  const context = asContext(conversation.context);
+  const state = journeyConversationState(context);
+  const fields = await activeJourneyFields(config.tenant_id);
+  const pending = state.pendingFieldKey ? fields.find((field) => field.key === state.pendingFieldKey) : undefined;
+  // A customer question or booking request is a detour, not an answer to a text field.
+  if (!pending || looksLikeCustomerQuestion(text) || looksLikeBookingRequest(text)) {
+    const ai = await applyValidatedAIResult(config, conversation, current, text);
+    return { conversation: await advanceJourneyConversation(config, ai.conversation, current.id), routeHint: ai.routeHint };
+  }
+  const parsed = validateDynamicJsonValue(pending as TableRow<"lead_field_definitions">, text);
+  if (parsed.error || parsed.value === undefined) {
+    const ai = await applyValidatedAIResult(config, conversation, current, text);
+    return { conversation: await advanceJourneyConversation(config, ai.conversation, current.id), routeHint: ai.routeHint };
+  }
+  const nextContext = withJourneyConversationState({ ...context, [pending.key]: parsed.value }, { pendingFieldKey: null });
+  const admin = createAdminClient();
+  const { data: lead, error: leadError } = await admin.from("leads").select("lead_data").eq("tenant_id", config.tenant_id).eq("id", conversation.lead_id!).single();
+  if (leadError || !lead) throw leadError ?? new Error("Lead not found");
+  const { error: leadUpdateError } = await admin.from("leads").update({ lead_data: { ...asContext(lead.lead_data), [pending.key]: parsed.value } }).eq("tenant_id", config.tenant_id).eq("id", conversation.lead_id!);
+  if (leadUpdateError) throw leadUpdateError;
+  const { data: updated, error: conversationError } = await admin.from("conversations").update({ context: nextContext, last_activity_at: new Date().toISOString(), status: "active" }).eq("tenant_id", config.tenant_id).eq("id", conversation.id).select("*").single();
+  if (conversationError || !updated) throw conversationError ?? new Error("Conversation update failed");
+  return { conversation: await advanceJourneyConversation(config, updated as TableRow<"conversations">, current.id), routeHint: undefined };
 }
 
 export async function processIncomingMessage(input: z.infer<typeof publicChatInput>): Promise<ChatView | null> {
@@ -183,6 +236,17 @@ export async function processPreviewMessage(tenantId: string, input: z.infer<typ
   const config = await getChatbotForTenant(tenantId);
   if (config.widget_id !== input.widgetId) return null;
   return processForConfig(config, input);
+}
+
+export async function resumeJourneyConversation(tenantId: string, leadId: string) {
+  const config = await getChatbotForTenant(tenantId);
+  const admin = createAdminClient();
+  const { data: conversation, error } = await admin.from("conversations").select("*").eq("tenant_id", tenantId).eq("lead_id", leadId).order("last_activity_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  if (!conversation) return null;
+  const { data: active, error: activateError } = await admin.from("conversations").update({ status: "active", ended_at: null }).eq("tenant_id", tenantId).eq("id", conversation.id).select("*").single();
+  if (activateError || !active) throw activateError ?? new Error("Conversation resume failed");
+  return advanceJourneyConversation(config, active as TableRow<"conversations">, active.current_node_id);
 }
 
 async function processForConfig(config: Config, input: z.infer<typeof publicChatInput>): Promise<ChatView> {
@@ -200,6 +264,7 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   }
   if (!conversation) throw new Error("Conversation creation failed");
   const activeConversation = conversation;
+  const startedWithLead = Boolean(activeConversation.lead_id);
   if (input.action === "start" || input.action === "restart") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
   const current = nodes.find((node) => node.id === activeConversation.current_node_id); if (!current || activeConversation.status !== "active") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
   let routeHint: "RAG_REQUIRED" | "AI_UNAVAILABLE" | undefined;
@@ -212,9 +277,16 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   } else if (input.action === "text") {
     const text = input.text ?? "";
     await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
-    if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
+    if (activeConversation.lead_id) {
+      const journey = await applyJourneyAnswer(config, activeConversation, current, text);
+      conversation = journey.conversation; routeHint = journey.routeHint;
+    } else if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
       // Current capture states remain protected: invalid capture text never reaches AI.
-      if (current.node_type === "capture") { await append(config.tenant_id, activeConversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "deterministic_capture_invalid" }); }
+      if (current.node_type === "capture") {
+        const ai = await applyValidatedAIResult(config, activeConversation, current, text);
+        conversation = ai.conversation; routeHint = ai.routeHint;
+        await append(config.tenant_id, activeConversation.id, current.id, "bot", "text", current.content, { route: "resume_pending_capture", pending_capture_key: current.capture_key });
+      }
       else { const ai = await applyValidatedAIResult(config, activeConversation, current, text); conversation = ai.conversation; routeHint = ai.routeHint; }
     } else {
       const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
@@ -223,8 +295,12 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
       conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
     }
   }
-  if (conversation.lead_id) await recordLeadInboundActivity(config.tenant_id, conversation.lead_id);
-  return view(config, conversation, nodes, edges, await readMessages(conversation.id), routeHint);
+  if (!conversation) throw new Error("Conversation update failed");
+  let finalConversation = conversation;
+  const currentAfterInput = nodes.find((node) => node.id === finalConversation.current_node_id);
+  if (finalConversation.lead_id && currentAfterInput?.node_type === "end" && !startedWithLead) finalConversation = await advanceJourneyConversation(config, finalConversation, currentAfterInput.id);
+  if (finalConversation.lead_id) await recordLeadInboundActivity(config.tenant_id, finalConversation.lead_id);
+  return view(config, finalConversation, nodes, edges, await readMessages(finalConversation.id), routeHint);
 }
 
 export async function getChatbotForTenant(tenantId: string) {

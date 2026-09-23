@@ -322,6 +322,12 @@ The application deterministically evaluates trusted lead, configured-field, qual
 
 An inbound customer message cancels only pending system-created inactivity follow-ups, preserves the lead and its collected data, and re-evaluates from the new activity time. Converted, disqualified, dormant, booking-in-progress, and intervention-blocked leads do not receive ordinary automation. Completing a system follow-up records it as completed and re-evaluates the finite, tenant-configured cadence. There are no JavaScript timers.
 
+## Conversational journey continuation
+
+The chatbot keeps its tenant-scoped conversation graph for deterministic capture and stores a small internal pending-question state in the existing `conversations.context` JSON. After contact capture, the application uses the journey projection and active configured fields to ask the next missing field in deterministic order. A validated structured answer updates the existing lead data, qualification is re-evaluated, and the next question is selected without repeating already-known fields.
+
+A customer question during a pending capture is a detour, not a field answer. The chatbot preserves the capture/pending field, uses the existing deterministic-or-AI response route, and resumes the same question. A validated AI booking intent is persisted in conversation context; only deterministic qualification plus that intent reaches booking handoff. Dify never advances a journey, schedules work, confirms an appointment, or converts a lead.
+
 n8n accesses jobs only through the application’s token-authenticated internal worker API. It cannot receive a Supabase service-role key or select arbitrary tenant data. Claims have a lease so a crashed worker’s job becomes recoverable; external providers should receive the returned idempotency key where they support it.
 
 On startup, a future n8n worker queries due pending/retryable jobs, calls the atomic claim RPC, executes the claimed work, then records completion or a retryable/terminal outcome. Database row locking (`FOR UPDATE SKIP LOCKED`), status checks, idempotency keys, bounded exponential retry, and attempt limits prevent duplicate execution. Existing follow-ups and appointments remain their respective domain records.
