@@ -5,6 +5,7 @@ import { fieldsFromError, followupSchema, followupTransitionSchema, type FormSta
 import { zonedLocalToIso } from "@/lib/domain/operations/time";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
+import { syncLeadJourney } from "@/lib/domain/journey/orchestration";
 
 const value = (formData: FormData, key: string) => String(formData.get(key) ?? "");
 
@@ -62,6 +63,7 @@ export async function transitionFollowup(_state: FormState, formData: FormData):
     .update({ status: result.data.status, outcome: result.data.outcome })
     .eq("tenant_id", tenant.id).eq("id", result.data.followupId).select("id, lead_id").maybeSingle();
   if (error || !data) return { error: "The follow-up status could not be changed." };
+  if (data.lead_id) await syncLeadJourney(tenant.id, data.lead_id, "lead_updated");
   revalidateFollowupViews(data.lead_id);
   return { error: null, message: "Follow-up status updated." };
 }

@@ -316,6 +316,12 @@ Suggested states:
 
 **Supabase remembers. n8n executes. Dify understands.** `lead_journeys` is the durable projection of a lead's generic journey stage, qualification/booking readiness, next expected action, due time, intervention block, and conversion timestamp. `journey_events` provides concise operational history. `action_jobs` is the authoritative ledger for deferred work; it is not an in-memory queue and does not depend on n8n being online.
 
+## Journey orchestration and re-engagement
+
+The application deterministically evaluates trusted lead, configured-field, qualification-rule, appointment, intervention, conversation, and follow-up state after meaningful events. It projects one normalized journey stage and next action; Dify may suggest facts but never chooses a stage, schedules work, or converts a lead. If an eligible lead is inactive, the application inserts one idempotent automated follow-up. The existing database trigger then creates the one corresponding `action_job`, and n8n later executes and completes it.
+
+An inbound customer message cancels only pending system-created inactivity follow-ups, preserves the lead and its collected data, and re-evaluates from the new activity time. Converted, disqualified, dormant, booking-in-progress, and intervention-blocked leads do not receive ordinary automation. Completing a system follow-up records it as completed and re-evaluates the finite, tenant-configured cadence. There are no JavaScript timers.
+
 n8n accesses jobs only through the application’s token-authenticated internal worker API. It cannot receive a Supabase service-role key or select arbitrary tenant data. Claims have a lease so a crashed worker’s job becomes recoverable; external providers should receive the returned idempotency key where they support it.
 
 On startup, a future n8n worker queries due pending/retryable jobs, calls the atomic claim RPC, executes the claimed work, then records completion or a retryable/terminal outcome. Database row locking (`FOR UPDATE SKIP LOCKED`), status checks, idempotency keys, bounded exponential retry, and attempt limits prevent duplicate execution. Existing follow-ups and appointments remain their respective domain records.

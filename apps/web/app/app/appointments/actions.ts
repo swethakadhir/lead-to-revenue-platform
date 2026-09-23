@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
 import { getTenantConfiguration } from "@/lib/domain/configuration/data";
 import { appointmentTypes } from "@/lib/domain/configuration/dynamic-fields";
+import { syncLeadJourney } from "@/lib/domain/journey/orchestration";
 
 const value = (formData: FormData, key: string) => String(formData.get(key) ?? "");
 
@@ -74,6 +75,7 @@ export async function transitionAppointment(_state: FormState, formData: FormDat
     .update({ status: result.data.status, cancellation_reason: result.data.cancellationReason })
     .eq("tenant_id", tenant.id).eq("id", result.data.appointmentId).select("id, lead_id").maybeSingle();
   if (error || !data) return { error: "The appointment status could not be changed." };
+  if (data.lead_id) await syncLeadJourney(tenant.id, data.lead_id, "lead_updated");
   revalidateAppointmentViews(data.lead_id);
   return { error: null, message: "Appointment status updated." };
 }

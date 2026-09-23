@@ -434,6 +434,8 @@ One optional, tenant-owned, operator-managed non-secret configuration row for AI
 
 `lead_journeys` is a one-row-per-lead durable journey projection; it complements rather than replaces `leads`, `appointments`, and `followups`. `journey_events` records meaningful transitions. `action_jobs` holds tenant-scoped deferred work with a unique `(tenant_id, idempotency_key)`, due/retry timestamps, claim status, attempt limits, and safe error categories. Only platform operators can read these internal operational records through RLS; future n8n uses a controlled, atomic claim/complete interface. Dify's current direct knowledge retrieval still requires Dify-side tenant metadata filtering or dataset isolation before multi-tenant production use.
 
+`tenant_settings.followup_defaults` is the tenant-scoped follow-up policy JSON. The initial schema supports `enabled`, existing `delay_days`, `max_attempts`, and stop flags for customer reply, qualification, booking, conversion, and an open intervention. It defaults conservatively to one day after meaningful activity and a maximum of three automated attempts; templates/tenants may override it. `followups.automation_key` is nullable so manual records remain unchanged; non-null keys are unique per tenant and prevent an orchestration retry from creating duplicate business follow-ups. Cancelling a pending follow-up cancels its pending/retry action job without deleting audit history.
+
 ---
 
 ## 8. Marketing / Attribution Tables
