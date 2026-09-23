@@ -11,6 +11,9 @@ assert(missing.stage === "requirement_understanding" && missing.nextAction === "
 const qualifyingInput = { ...base, lead: { ...base.lead, lead_data: { requirement: "Consultation" } }, qualification: { qualificationStatus: "qualified", score: 50, missingFieldKeys: [] }, contact: { phone: "+919999999999", email: null } };
 const qualifying = evaluateLeadJourney(qualifyingInput);
 assert(qualifying.stage === "qualification" && qualifying.nextAction === "offer_booking" && !qualifying.bookingReady, "deterministic qualification is distinct from booking intent");
+const staleProjectionInput = { ...base, lead: { ...base.lead, status: "new", qualification_status: "qualified", lead_data: { requirement: "Consultation" } }, qualification: { qualificationStatus: "qualified", score: 50, missingFieldKeys: [] }, contact: { phone: "+919999999999", email: null } };
+const staleProjection = evaluateLeadJourney(staleProjectionInput);
+assert(staleProjection.stage === "qualification" && staleProjection.nextAction === "offer_booking" && staleProjection.missingInformation.length === 0 && !staleProjection.bookingReady, "qualified new lead with no missing data remains qualification-stage until booking intent");
 const bookingInput = { ...base, lead: { ...base.lead, status: "booking_ready", lead_data: { requirement: "Consultation" } }, qualification: { qualificationStatus: "qualified", score: 50, missingFieldKeys: [] }, contact: { phone: "+919999999999", email: null } };
 const booking = evaluateLeadJourney(bookingInput);
 assert(booking.stage === "booking_ready" && booking.bookingReady, "qualified booking intent is booking ready, not converted");
