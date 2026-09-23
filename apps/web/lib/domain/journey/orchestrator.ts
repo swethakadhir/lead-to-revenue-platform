@@ -37,6 +37,7 @@ type Input = {
   interventionOpen: boolean;
   pendingAutomatedFollowUp: boolean;
   completedAutomatedFollowUps: number;
+  bookingIntent?: boolean;
   lastMeaningfulActivityAt: string | null;
   policy: Json;
 };
@@ -74,7 +75,7 @@ export function evaluateLeadJourney(input: Input): JourneyDecision {
   const terminal = input.hasConfirmedAppointment || input.lead.status === "converted" ? "converted" : input.lead.status === "disqualified" ? "disqualified" : input.lead.status === "dormant" ? "dormant" : null;
   const qualificationState: JourneyDecision["qualificationState"] = terminal === "disqualified" ? "disqualified" : qualification.qualificationStatus;
   const bookingInProgress = !terminal && (input.hasActiveAppointment || input.lead.status === "booking_in_progress");
-  const bookingReady = !terminal && !bookingInProgress && qualificationState === "qualified" && input.lead.status === "booking_ready";
+  const bookingReady = !terminal && !bookingInProgress && qualificationState === "qualified" && (input.lead.status === "booking_ready" || input.bookingIntent === true);
   let stage: JourneyStage = terminal ?? (bookingInProgress ? "booking_in_progress" : bookingReady ? "booking_ready" : missingInformation.length ? "requirement_understanding" : "qualification");
   let nextAction: JourneyDecision["nextAction"] = stage === "converted" || stage === "disqualified" || stage === "dormant" ? "none" : stage === "booking_in_progress" ? "continue_booking" : stage === "booking_ready" ? "offer_booking" : stage === "requirement_understanding" ? "understand_requirement" : qualificationState === "qualified" ? "offer_booking" : missingInformation.length ? "collect_missing_information" : "continue_qualification";
   if (input.pendingAutomatedFollowUp && (stage === "requirement_understanding" || stage === "qualification")) {

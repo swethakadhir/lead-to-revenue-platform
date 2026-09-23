@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { evaluateLeadJourney } from "@/lib/domain/journey/orchestrator";
 import { evaluateQualification } from "@/lib/domain/chatbot/qualification";
+import { journeyConversationState } from "@/lib/domain/chatbot/journey-actions";
 
 export async function getOperatorOverview() {
   const client = await createClient();
@@ -48,7 +49,7 @@ export async function getOperatorTenant(tenantId: string) {
     const leadFollowups = (followups.data ?? []).filter((followup) => followup.lead_id === lead.id);
     const latestConversation = (conversations.data ?? []).find((conversation) => conversation.lead_id === lead.id);
     const data = lead.lead_data && typeof lead.lead_data === "object" && !Array.isArray(lead.lead_data) ? lead.lead_data : {};
-    return { ...lead, contact, journeyDecision: evaluateLeadJourney({ lead, fields: fields.data ?? [], rules: rules.data ?? [], qualification: evaluateQualification(rules.data ?? [], { ...data, email: contact?.email ?? undefined, phone: contact?.phone ?? undefined }), contact, hasActiveAppointment: leadAppointments.some((appointment) => appointment.status === "scheduled"), hasConfirmedAppointment: leadAppointments.some((appointment) => appointment.status === "confirmed"), interventionOpen: (interventions.data ?? []).some((intervention) => intervention.lead_id === lead.id), pendingAutomatedFollowUp: leadFollowups.some((followup) => followup.status === "pending" && followup.automation_key), completedAutomatedFollowUps: leadFollowups.filter((followup) => followup.status === "completed" && followup.automation_key).length, lastMeaningfulActivityAt: latestConversation?.last_activity_at ?? null, policy: settings.data?.followup_defaults ?? {} }) };
+    return { ...lead, contact, journeyDecision: evaluateLeadJourney({ lead, fields: fields.data ?? [], rules: rules.data ?? [], qualification: evaluateQualification(rules.data ?? [], { ...data, email: contact?.email ?? undefined, phone: contact?.phone ?? undefined }), contact, hasActiveAppointment: leadAppointments.some((appointment) => appointment.status === "scheduled"), hasConfirmedAppointment: leadAppointments.some((appointment) => appointment.status === "confirmed"), interventionOpen: (interventions.data ?? []).some((intervention) => intervention.lead_id === lead.id), pendingAutomatedFollowUp: leadFollowups.some((followup) => followup.status === "pending" && followup.automation_key), completedAutomatedFollowUps: leadFollowups.filter((followup) => followup.status === "completed" && followup.automation_key).length, bookingIntent: journeyConversationState(latestConversation?.context && typeof latestConversation.context === "object" && !Array.isArray(latestConversation.context) ? latestConversation.context : {}).bookingIntent, lastMeaningfulActivityAt: latestConversation?.last_activity_at ?? null, policy: settings.data?.followup_defaults ?? {} }) };
   });
   return {
     tenant,

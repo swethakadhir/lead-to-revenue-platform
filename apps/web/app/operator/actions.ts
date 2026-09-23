@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requirePlatformOperator } from "@/lib/auth/platform-operator";
 import { createClient } from "@/lib/supabase/server";
 import { syncLeadJourney } from "@/lib/domain/journey/orchestration";
+import { resumeJourneyConversation } from "@/lib/domain/chatbot/engine";
 
 export type OperatorActionState = { error: string | null; message?: string };
 const initialError = { error: "Invalid request." };
@@ -36,7 +37,10 @@ export async function resolveIntervention(_state: OperatorActionState, formData:
   if (!parsed.success) return initialError;
   const { data, error } = await (await createClient()).from("human_interventions").update({ status: "resolved", resolution_notes: parsed.data.notes || null, resolved_at: new Date().toISOString(), handled_by: operator.userId }).eq("id", parsed.data.id).select("tenant_id, lead_id").maybeSingle();
   if (error || !data) return { error: "Could not resolve the intervention." };
-  if (data.lead_id) await syncLeadJourney(data.tenant_id, data.lead_id, "intervention_resolved");
+  if (data.lead_id) {
+    await syncLeadJourney(data.tenant_id, data.lead_id, "intervention_resolved");
+    await resumeJourneyConversation(data.tenant_id, data.lead_id);
+  }
   revalidatePath("/operator");
   return { error: null, message: "Intervention resolved." };
 }

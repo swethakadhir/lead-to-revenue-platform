@@ -467,6 +467,8 @@ Confirmed booking is the current conversion definition. The website chatbot firs
 
 Follow-up strategy is application-owned and configuration-driven. After meaningful customer activity, the platform evaluates the durable journey and may schedule a finite, conservative inactivity follow-up sequence. A reply cancels stale automated follow-ups and resumes the same lead journey; it does not create a duplicate lead. Manual follow-ups remain visible operational work and are never silently cancelled by customer activity.
 
+Website conversations progressively collect tenant-configured information after contact capture. The next unanswered configured requirement is selected by application logic; customer questions can detour to a safe deterministic or AI response and then return to that pending question. AI-proposed fields are accepted only after configured-field validation. Booking interest is remembered but becomes booking-ready only after deterministic qualification; confirmed appointment remains the conversion event.
+
 ## Intelligent requirement understanding
 
 Free text may be sent to the server-side AI provider only after deterministic capture, configured options, and structured business answers have been ruled out. AI returns validated structured facts which are mapped only to active tenant field definitions. Qualification is evaluated by application rules, not model judgement. AI knowledge answers preserve the existing conversation state; low confidence, malformed output, timeout, and unavailable-provider conditions fall back safely or create a platform-operator intervention when the validated result requests one. A booking request sets booking readiness only; only a confirmed appointment converts a lead.
