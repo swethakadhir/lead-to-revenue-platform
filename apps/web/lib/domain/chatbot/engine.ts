@@ -8,6 +8,7 @@ import { getAIService } from "@/lib/domain/ai";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
 import { bookingReady } from "@/lib/domain/journey/state";
+import { recordLeadInboundActivity } from "@/lib/domain/journey/orchestration";
 
 function routerDiagnostic(event: string, details: Record<string, string | boolean> = {}) {
   if (process.env.NODE_ENV === "development") console.info("[ChatbotRouter]", event, details);
@@ -222,6 +223,7 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
       conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
     }
   }
+  if (conversation.lead_id) await recordLeadInboundActivity(config.tenant_id, conversation.lead_id);
   return view(config, conversation, nodes, edges, await readMessages(conversation.id), routeHint);
 }
 

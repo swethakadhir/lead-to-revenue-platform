@@ -140,9 +140,9 @@ export type Database = {
         Relationships: [];
       };
       followups: {
-        Row: { id: string; tenant_id: string; lead_id: string | null; opportunity_id: string | null; contact_id: string; assigned_user_id: string | null; type: string; status: string; due_at: string; completed_at: string | null; notes: string | null; outcome: string | null; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; lead_id?: string | null; opportunity_id?: string | null; contact_id: string; assigned_user_id?: string | null; type: string; status?: string; due_at: string; notes?: string | null; outcome?: string | null; created_at?: string; updated_at?: string };
-        Update: { lead_id?: string | null; opportunity_id?: string | null; contact_id?: string; assigned_user_id?: string | null; type?: string; status?: string; due_at?: string; notes?: string | null; outcome?: string | null; updated_at?: string };
+        Row: { id: string; tenant_id: string; lead_id: string | null; opportunity_id: string | null; contact_id: string; assigned_user_id: string | null; type: string; status: string; due_at: string; completed_at: string | null; notes: string | null; outcome: string | null; automation_key: string | null; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; lead_id?: string | null; opportunity_id?: string | null; contact_id: string; assigned_user_id?: string | null; type: string; status?: string; due_at: string; notes?: string | null; outcome?: string | null; automation_key?: string | null; created_at?: string; updated_at?: string };
+        Update: { lead_id?: string | null; opportunity_id?: string | null; contact_id?: string; assigned_user_id?: string | null; type?: string; status?: string; due_at?: string; notes?: string | null; outcome?: string | null; automation_key?: string | null; updated_at?: string };
         Relationships: [];
       };
     };

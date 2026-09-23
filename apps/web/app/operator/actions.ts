@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePlatformOperator } from "@/lib/auth/platform-operator";
 import { createClient } from "@/lib/supabase/server";
+import { syncLeadJourney } from "@/lib/domain/journey/orchestration";
 
 export type OperatorActionState = { error: string | null; message?: string };
 const initialError = { error: "Invalid request." };
@@ -24,6 +25,7 @@ export async function createIntervention(_state: OperatorActionState, formData: 
   if (!parsed.success) return { ...initialError, error: "Enter a reason for internal intervention." };
   const { error } = await (await createClient()).from("human_interventions").insert({ tenant_id: parsed.data.tenantId, lead_id: parsed.data.leadId || null, conversation_id: parsed.data.conversationId || null, reason: parsed.data.reason, handled_by: operator.userId });
   if (error) return { error: "Could not create the intervention." };
+  if (parsed.data.leadId) await syncLeadJourney(parsed.data.tenantId, parsed.data.leadId, "lead_updated");
   revalidatePath(`/operator/tenants/${parsed.data.tenantId}`); revalidatePath("/operator");
   return { error: null, message: "Internal intervention opened." };
 }
@@ -32,8 +34,9 @@ export async function resolveIntervention(_state: OperatorActionState, formData:
   const operator = await requirePlatformOperator();
   const parsed = z.object({ id: z.uuid(), notes: z.string().trim().max(5000) }).safeParse({ id: String(formData.get("id") ?? ""), notes: String(formData.get("notes") ?? "") });
   if (!parsed.success) return initialError;
-  const { error } = await (await createClient()).from("human_interventions").update({ status: "resolved", resolution_notes: parsed.data.notes || null, resolved_at: new Date().toISOString(), handled_by: operator.userId }).eq("id", parsed.data.id);
-  if (error) return { error: "Could not resolve the intervention." };
+  const { data, error } = await (await createClient()).from("human_interventions").update({ status: "resolved", resolution_notes: parsed.data.notes || null, resolved_at: new Date().toISOString(), handled_by: operator.userId }).eq("id", parsed.data.id).select("tenant_id, lead_id").maybeSingle();
+  if (error || !data) return { error: "Could not resolve the intervention." };
+  if (data.lead_id) await syncLeadJourney(data.tenant_id, data.lead_id, "intervention_resolved");
   revalidatePath("/operator");
   return { error: null, message: "Intervention resolved." };
 }

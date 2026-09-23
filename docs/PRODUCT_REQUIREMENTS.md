@@ -465,6 +465,8 @@ The system is operated primarily by automation and our internal team. End custom
 
 Confirmed booking is the current conversion definition. The website chatbot first gathers configured requirement and qualification information, then reaches booking readiness; it must not claim conversion at contact capture or booking interest. Dify/RAG may later answer tenant-scoped unstructured questions without replacing deterministic state. n8n may later execute external actions while Supabase remains the source of truth.
 
+Follow-up strategy is application-owned and configuration-driven. After meaningful customer activity, the platform evaluates the durable journey and may schedule a finite, conservative inactivity follow-up sequence. A reply cancels stale automated follow-ups and resumes the same lead journey; it does not create a duplicate lead. Manual follow-ups remain visible operational work and are never silently cancelled by customer activity.
+
 ## Intelligent requirement understanding
 
 Free text may be sent to the server-side AI provider only after deterministic capture, configured options, and structured business answers have been ruled out. AI returns validated structured facts which are mapped only to active tenant field definitions. Qualification is evaluated by application rules, not model judgement. AI knowledge answers preserve the existing conversation state; low confidence, malformed output, timeout, and unavailable-provider conditions fall back safely or create a platform-operator intervention when the validated result requests one. A booking request sets booking readiness only; only a confirmed appointment converts a lead.
