@@ -15,5 +15,8 @@ export async function POST(request: Request) {
     const result = await processPreviewMessage(tenant.id, parsed.data);
     if (!result) return NextResponse.json({ error: "Preview is unavailable." }, { status: 404 });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
-  } catch { return NextResponse.json({ error: "The preview could not process that request." }, { status: 400 }); }
+  } catch (error) {
+    console.error("[ChatbotPreview] request failed", { action: parsed.data.action, category: error instanceof Error ? error.name : "unknown" });
+    return NextResponse.json({ error: "The preview could not process that request." }, { status: 400 });
+  }
 }

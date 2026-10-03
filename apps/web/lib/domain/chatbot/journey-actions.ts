@@ -1,5 +1,6 @@
 import type { Json, TableRow } from "@/lib/supabase/database.types";
 import type { JourneyDecision } from "@/lib/domain/journey/orchestrator";
+import { looksLikeBookingRequest } from "./policy";
 
 export const journeyContextKey = "_journey";
 export type JourneyConversationState = { pendingFieldKey: string | null; bookingIntent: boolean };
@@ -43,6 +44,4 @@ export function looksLikeCustomerQuestion(text: string) {
   return /\?|^(what|when|where|why|how|can|could|do|does|is|are|will|would)\b|\b(price|pricing|cost|fee|hours)\b/i.test(text.trim());
 }
 
-export function looksLikeBookingRequest(text: string) {
-  return /\b(book|booking|appointment|schedule|availability|available|come tomorrow)\b/i.test(text);
-}
+export { looksLikeBookingRequest };

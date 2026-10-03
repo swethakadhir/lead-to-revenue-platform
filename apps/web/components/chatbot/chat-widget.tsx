@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Branding = { primary_color?: string; position?: "left" | "right" };
 type ChatView = { conversationId: string; assistantName: string; node: { type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: string | number | boolean | null | Branding | unknown[]; routeHint?: string };
@@ -15,13 +15,26 @@ export function ChatWidget({ widgetId, floating = false, endpoint = "/api/chatbo
   const [open, setOpen] = useState(!floating);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const call = useCallback(async (body: Record<string, unknown>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
     setError("");
-    const activeSessionId = body.action === "restart" ? renewSessionId(widgetId, sessionScope) : sessionId(widgetId, sessionScope);
-    const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ widgetId, sessionId: activeSessionId, ...body }) });
-    const data = await response.json();
-    if (!response.ok) { setError(data.error ?? "Chat is unavailable."); return; }
-    setView(data);
+    try {
+      const activeSessionId = body.action === "restart" ? renewSessionId(widgetId, sessionScope) : sessionId(widgetId, sessionScope);
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ widgetId, sessionId: activeSessionId, ...body }) });
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok) { setError(data && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : "Chat is unavailable."); return; }
+      if (!data || typeof data !== "object") { setError("Chat returned an invalid response. Please try again."); return; }
+      setView(data as ChatView);
+    } catch {
+      setError("Chat could not process that request. Please try again.");
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
   }, [endpoint, sessionScope, widgetId]);
   useEffect(() => {
     if (!open || view) return;
@@ -37,10 +50,10 @@ export function ChatWidget({ widgetId, floating = false, endpoint = "/api/chatbo
   return <div className={floating ? `fixed bottom-5 ${position} z-50` : "mx-auto w-full max-w-sm p-3"}>
     {floating && !open ? <div className="flex flex-col items-end gap-2"><span className="rounded-full bg-white px-3 py-1.5 text-xs text-slate-600 shadow">Need help?</span><button aria-label="Open chat" className="flex h-14 w-14 items-center justify-center rounded-full text-2xl font-semibold text-white shadow-lg transition hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-200" onClick={() => setOpen(true)} style={{ backgroundColor: primary }}>◌</button></div> : null}
     {open && <section aria-label={`${assistantName} chat`} className="w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl transition-all duration-200">
-      <header className="flex items-center justify-between px-4 py-3 text-white" style={{ backgroundColor: primary }}><div><strong>{assistantName}</strong><p className="text-xs text-white/85">Usually replies instantly</p></div><div className="flex gap-3"><button aria-label="Restart chat" className="text-lg" onClick={() => void call({ action: "restart" })}>↻</button>{floating && <button aria-label="Minimize chat" className="text-xl" onClick={() => setOpen(false)}>×</button>}</div></header>
+      <header className="flex items-center justify-between px-4 py-3 text-white" style={{ backgroundColor: primary }}><div><strong>{assistantName}</strong><p className="text-xs text-white/85">Usually replies instantly</p></div><div className="flex gap-3"><button aria-label="Restart chat" className="text-lg disabled:opacity-60" disabled={pending} onClick={() => void call({ action: "restart" })}>↻</button>{floating && <button aria-label="Minimize chat" className="text-xl" onClick={() => setOpen(false)}>×</button>}</div></header>
       <div aria-live="polite" className="max-h-[55vh] min-h-64 space-y-3 overflow-y-auto p-4">{view?.messages.map((message, index) => <p className={`w-fit max-w-[90%] rounded-2xl px-3 py-2 text-sm ${message.sender === "visitor" ? "ml-auto bg-blue-50 text-slate-800" : "bg-slate-100 text-slate-800"}`} key={`${index}-${message.content}`}>{message.content}</p>)}{error && <p className="text-sm text-red-700">{error}</p>}</div>
-      {view?.options.length ? <div className="flex flex-wrap gap-2 border-t p-3">{view.options.map((option) => <button className="rounded-full border px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50" key={option.id} onClick={() => void call({ action: "select", edgeId: option.id })}>{option.label}</button>)}</div> : null}
-      {(view?.node.type === "capture" || view?.status === "active") ? <form className="flex gap-2 border-t p-3" onSubmit={(event) => { event.preventDefault(); if (text.trim()) { void call({ action: "text", text }); setText(""); } }}><input aria-label="Chat message" className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm" onChange={(event) => setText(event.target.value)} placeholder={view?.node.type === "capture" ? "Type your answer" : "Or ask us a question..."} value={text} /><button aria-label="Send message" className="rounded-lg px-3 py-2 text-sm font-medium text-white" style={{ backgroundColor: primary }}>Send</button></form> : null}
+      {view?.options.length ? <div className="flex flex-wrap gap-2 border-t p-3">{view.options.map((option) => <button className="rounded-full border px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-60" disabled={pending} key={option.id} onClick={() => void call({ action: "select", edgeId: option.id })}>{option.label}</button>)}</div> : null}
+      {(view?.node.type === "capture" || view?.status === "active") ? <form className="flex gap-2 border-t p-3" onSubmit={(event) => { event.preventDefault(); if (!pending && text.trim()) { void call({ action: "text", text }); setText(""); } }}><input aria-label="Chat message" className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-60" disabled={pending} onChange={(event) => setText(event.target.value)} placeholder={view?.node.type === "capture" ? "Type your answer" : "Or ask us a question..."} value={text} /><button aria-label="Send message" className="rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={pending} style={{ backgroundColor: primary }}>Send</button></form> : null}
     </section>}
   </div>;
 }

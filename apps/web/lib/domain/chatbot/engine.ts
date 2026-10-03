@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TableRow } from "@/lib/supabase/database.types";
-import { acceptsCaptureInput, isPublicWidgetAvailable } from "./policy";
+import { acceptsCaptureInput, initialMenuBookingEntry, isConfiguredBookingSelection, isPublicWidgetAvailable, isStaleMenuTransition } from "./policy";
 import { getAIService } from "@/lib/domain/ai";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
@@ -64,6 +64,21 @@ async function readMessages(conversationId: string) {
   const { data, error } = await createAdminClient().from("conversation_messages").select("sender_type, content").eq("conversation_id", conversationId).order("created_at").limit(100);
   if (error) throw error;
   return data ?? [];
+}
+
+async function latestConversation(config: Config, conversationId: string) {
+  const { data, error } = await createAdminClient().from("conversations").select("*").eq("tenant_id", config.tenant_id).eq("id", conversationId).maybeSingle();
+  if (error || !data) throw error ?? new Error("Conversation not found.");
+  return data as TableRow<"conversations">;
+}
+
+async function advanceMenuTransition(config: Config, conversation: TableRow<"conversations">, current: Node, destination: Node, context: Context) {
+  const { data, error } = await createAdminClient().from("conversations").update({ current_node_id: destination.id, context, last_activity_at: new Date().toISOString(), status: destination.node_type === "end" ? "ended" : "active" }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).eq("current_node_id", current.id).select("*").maybeSingle();
+  if (error) throw error;
+  if (data) return { conversation: data as TableRow<"conversations">, applied: true };
+  const latest = await latestConversation(config, conversation.id);
+  if (isStaleMenuTransition(current.id, latest.current_node_id)) return { conversation: latest, applied: false };
+  throw new Error("Conversation transition was not applied.");
 }
 
 function validCapture(node: Node, text: string) {
@@ -154,13 +169,17 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   return { conversation: updated as TableRow<"conversations">, routeHint: undefined };
 }
 
-async function enter(config: Config, conversation: TableRow<"conversations">, destination: Node, context: Context, nodes: Node[], edges: Edge[]) {
+async function enter(config: Config, conversation: TableRow<"conversations">, destination: Node, context: Context, nodes: Node[], edges: Edge[], alreadyAtDestination = false) {
   const admin = createAdminClient();
   let current = destination;
   let updated = conversation;
   // Answer/message nodes can advance via a default edge; a cap prevents malformed loops.
   for (let step = 0; step < 8; step += 1) {
-    updated = (await admin.from("conversations").update({ current_node_id: current.id, context, last_activity_at: new Date().toISOString(), status: current.node_type === "end" ? "ended" : "active" }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single()).data as TableRow<"conversations">;
+    if (!alreadyAtDestination || step > 0) {
+      const { data, error } = await admin.from("conversations").update({ current_node_id: current.id, context, last_activity_at: new Date().toISOString(), status: current.node_type === "end" ? "ended" : "active" }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
+      if (error || !data) throw error ?? new Error("Conversation transition failed.");
+      updated = data as TableRow<"conversations">;
+    }
     const content = current.node_type === "end" ? config.confirmation_message || current.content : current.content;
     await append(config.tenant_id, updated.id, current.id, "bot", current.node_type === "action_placeholder" ? "action_placeholder" : "text", content);
     if (current.node_type === "end") {
@@ -256,7 +275,10 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   if (error) throw error;
   let conversation = found as TableRow<"conversations"> | null;
   if (!conversation || input.action === "restart") {
-    if (conversation && input.action === "restart") await admin.from("conversations").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", conversation.id);
+    if (conversation && input.action === "restart") {
+      const { error: endError } = await admin.from("conversations").update({ status: "ended", ended_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", config.tenant_id);
+      if (endError) throw endError;
+    }
     const { data, error: createError } = await admin.from("conversations").insert({ tenant_id: config.tenant_id, chatbot_config_id: config.id, channel: "website", session_identifier: input.sessionId, current_node_id: root.id }).select("*").single();
     if (createError || !data) throw createError ?? new Error("Conversation creation failed"); conversation = data as TableRow<"conversations">;
     await append(config.tenant_id, conversation.id, root.id, "bot", "text", config.welcome_message);
@@ -272,27 +294,41 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
     const edge = edges.find((item) => item.id === input.edgeId && item.source_node_id === current.id);
     if (!edge) throw new Error("Invalid chatbot transition.");
     const destination = nodes.find((node) => node.id === edge.destination_node_id); if (!destination) throw new Error("Invalid chatbot destination.");
+    const context = withJourneyConversationState({ ...asContext(activeConversation.context), ...asContext(edge.set_context) }, { bookingIntent: isConfiguredBookingSelection(edge, nodes) ? true : undefined });
+    const transition = await advanceMenuTransition(config, activeConversation, current, destination, context);
+    if (!transition.applied) return view(config, transition.conversation, nodes, edges, await readMessages(transition.conversation.id));
     await append(config.tenant_id, activeConversation.id, current.id, "visitor", "option", edge.label, { edge_id: edge.id });
-    conversation = await enter(config, activeConversation, destination, { ...asContext(activeConversation.context), ...asContext(edge.set_context) }, nodes, edges);
+    conversation = await enter(config, transition.conversation, destination, context, nodes, edges, true);
   } else if (input.action === "text") {
     const text = input.text ?? "";
-    await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
-    if (activeConversation.lead_id) {
+    const bookingEntry = !activeConversation.lead_id ? initialMenuBookingEntry({ rootNodeId: root.id, currentNodeId: current.id, currentNodeType: current.node_type, text, nodes, edges }) : null;
+    if (bookingEntry) {
+      const destination = nodes.find((node) => node.id === bookingEntry.destination_node_id);
+      if (!destination) throw new Error("Invalid chatbot destination.");
+      const context = withJourneyConversationState({ ...asContext(activeConversation.context), ...asContext(bookingEntry.set_context ?? {}) }, { bookingIntent: true });
+      const transition = await advanceMenuTransition(config, activeConversation, current, destination, context);
+      if (!transition.applied) return view(config, transition.conversation, nodes, edges, await readMessages(transition.conversation.id));
+      await append(config.tenant_id, activeConversation.id, current.id, "visitor", "text", text);
+      conversation = await enter(config, transition.conversation, destination, context, nodes, edges, true);
+    } else {
+      await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
+      if (activeConversation.lead_id) {
       const journey = await applyJourneyAnswer(config, activeConversation, current, text);
       conversation = journey.conversation; routeHint = journey.routeHint;
-    } else if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
-      // Current capture states remain protected: invalid capture text never reaches AI.
-      if (current.node_type === "capture") {
-        const ai = await applyValidatedAIResult(config, activeConversation, current, text);
-        conversation = ai.conversation; routeHint = ai.routeHint;
-        await append(config.tenant_id, activeConversation.id, current.id, "bot", "text", current.content, { route: "resume_pending_capture", pending_capture_key: current.capture_key });
+      } else if (!acceptsCaptureInput(current.node_type, current.capture_key, validCapture(current, text))) {
+        // Current capture states remain protected: invalid capture text never reaches AI.
+        if (current.node_type === "capture") {
+          const ai = await applyValidatedAIResult(config, activeConversation, current, text);
+          conversation = ai.conversation; routeHint = ai.routeHint;
+          await append(config.tenant_id, activeConversation.id, current.id, "bot", "text", current.content, { route: "resume_pending_capture", pending_capture_key: current.capture_key });
+        }
+        else { const ai = await applyValidatedAIResult(config, activeConversation, current, text); conversation = ai.conversation; routeHint = ai.routeHint; }
+      } else {
+        const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
+        if (!destination) throw new Error("Capture node has no next step.");
+        const node = nodes.find((item) => item.id === destination.destination_node_id); if (!node) throw new Error("Invalid chatbot destination.");
+        conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
       }
-      else { const ai = await applyValidatedAIResult(config, activeConversation, current, text); conversation = ai.conversation; routeHint = ai.routeHint; }
-    } else {
-      const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
-      if (!destination) throw new Error("Capture node has no next step.");
-      const node = nodes.find((item) => item.id === destination.destination_node_id); if (!node) throw new Error("Invalid chatbot destination.");
-      conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
     }
   }
   if (!conversation) throw new Error("Conversation update failed");

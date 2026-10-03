@@ -32,6 +32,6 @@ Unknown free text is persisted and returns the configured fallback. It makes no 
 
 ## Managed journey correction
 
-The chatbot is the first end-customer channel in a managed service, not a client-run CRM feature. Free text at a normal menu records the fallback and preserves the current menu state. Input is treated as a name, phone, email, or configured answer only when the conversation is explicitly at that capture node. Preview uses an isolated preview session but the same widget and engine as the public embed.
+The chatbot is the first end-customer channel in a managed service, not a client-run CRM feature. Unknown free text at a normal menu records the fallback and preserves the current menu state. A recognized booking request at the initial menu enters that menu's configured contact-capture path and persists booking intent for the deterministic journey; qualification still gates booking readiness. Input is otherwise treated as a name, phone, email, or configured answer only when the conversation is explicitly at that capture node. Preview uses an isolated preview session but the same widget and engine as the public embed.
 
 Platform operators, rather than tenant members, own cross-client setup and intervention work. They can explicitly replace a tenant chatbot with the tenant-selected template starter flow after a destructive confirmation; applying a template alone never overwrites an existing chatbot. A future query router may add tenant-scoped Dify/RAG responses and later n8n actions without replacing the channel-neutral conversation state.
