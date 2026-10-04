@@ -19,6 +19,7 @@ insert into public.leads (id, tenant_id, contact_id, status, qualification_statu
   ('71000000-0000-0000-0000-000000000111', '71000000-0000-0000-0000-000000000010', '71000000-0000-0000-0000-000000000101', 'new', 'unqualified'),
   ('71000000-0000-0000-0000-000000000112', '71000000-0000-0000-0000-000000000010', '71000000-0000-0000-0000-000000000101', 'new', 'pending'),
   ('71000000-0000-0000-0000-000000000113', '71000000-0000-0000-0000-000000000010', '71000000-0000-0000-0000-000000000101', 'qualified', 'qualified'),
+  ('71000000-0000-0000-0000-000000000114', '71000000-0000-0000-0000-000000000010', '71000000-0000-0000-0000-000000000101', 'new', 'unqualified'),
   ('72000000-0000-0000-0000-000000000211', '72000000-0000-0000-0000-000000000020', '72000000-0000-0000-0000-000000000201', 'new', 'unqualified');
 insert into public.opportunities (id, tenant_id, lead_id, contact_id, name, stage_key, estimated_value, currency) values
   ('71000000-0000-0000-0000-000000000121', '71000000-0000-0000-0000-000000000010', '71000000-0000-0000-0000-000000000111', '71000000-0000-0000-0000-000000000101', 'Implant', 'new', 50000, 'INR'),
@@ -51,10 +52,10 @@ select is((select count(*) from public.appointments where tenant_id = '71000000-
 select is((select count(*) from public.followups where tenant_id = '71000000-0000-0000-0000-000000000010' and status = 'pending' and due_at < now()), 1::bigint, 'Overdue follow-ups is 1');
 select is((select count(*) from public.followups where tenant_id = '71000000-0000-0000-0000-000000000010' and status = 'pending' and due_at >= now() and due_at < (date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '1 day') at time zone 'Asia/Kolkata'), 1::bigint, 'Follow-ups due today is 1 and excludes overdue');
 select is((select count(*) from public.appointments where tenant_id = '71000000-0000-0000-0000-000000000010' and status in ('scheduled', 'confirmed') and starts_at >= now()), 2::bigint, 'Upcoming appointments list has 2 records');
-select is((select count(*) from public.leads where tenant_id = '71000000-0000-0000-0000-000000000010'), 3::bigint, 'Recent leads source has 3 records');
+select is((select count(*) from public.leads where tenant_id = '71000000-0000-0000-0000-000000000010'), 4::bigint, 'Recent leads source has 4 records');
 select is((select currency from public.tenants where id = '71000000-0000-0000-0000-000000000010'), 'INR', 'Tenant A currency is INR');
 select is((select timezone from public.tenants where id = '71000000-0000-0000-0000-000000000010'), 'Asia/Kolkata', 'Tenant A timezone retains IANA casing');
-select is((select count(*) from public.leads), 3::bigint, 'Tenant A cannot see Tenant B leads');
+select is((select count(*) from public.leads), 4::bigint, 'Tenant A cannot see Tenant B leads');
 select is((select count(*) from public.followups), 4::bigint, 'Tenant A cannot see Tenant B follow-ups');
 
 reset role;
