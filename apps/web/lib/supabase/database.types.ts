@@ -162,6 +162,10 @@ export type Database = {
         Args: { p_tenant_id: string; p_lead_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_status: string; p_qualification_status: string; p_qualification_score: number | null; p_assigned_user_id: string | null; p_lead_data: Json };
         Returns: undefined;
       };
+      create_chatbot_capture_lead: {
+        Args: { p_tenant_id: string; p_conversation_id: string; p_first_name: string; p_phone: string; p_email: string | null; p_lead_data: Json; p_lead_status: string; p_qualification_status: string; p_qualification_score: number | null };
+        Returns: { conversation_id: string; contact_id: string | null; lead_id: string; created: boolean }[];
+      };
       claim_due_action_jobs: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
       complete_action_job: { Args: { p_job_id: string; p_success: boolean; p_error_category?: string | null; p_error_message?: string | null }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"] };
       claim_due_action_jobs_worker: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };

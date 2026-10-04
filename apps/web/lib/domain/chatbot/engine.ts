@@ -89,15 +89,9 @@ function validCapture(node: Node, text: string) {
 }
 
 async function maybeCreateLead(config: Config, conversation: TableRow<"conversations">, context: Context) {
-  if (!config.lead_capture_enabled || conversation.lead_id || !context.first_name || !context.phone) return conversation;
+  if (!config.lead_capture_enabled || !context.first_name || !context.phone) return { conversation, created: false };
   const admin = createAdminClient();
   const phone = String(context.phone).trim(); const email = typeof context.email === "string" && context.email ? context.email.trim().toLowerCase() : null;
-  const { data: existing } = await admin.from("contacts").select("id").eq("tenant_id", config.tenant_id).or(email ? `email.ilike.${email},phone.eq.${phone}` : `phone.eq.${phone}`).limit(1).maybeSingle();
-  let contactId = existing?.id;
-  if (!contactId) {
-    const { data, error } = await admin.from("contacts").insert({ tenant_id: config.tenant_id, first_name: String(context.first_name).trim(), phone, email, metadata: { source: "website_chatbot" } }).select("id").single();
-    if (error || !data) throw error ?? new Error("Contact creation failed"); contactId = data.id;
-  }
   const { data: fields, error: fieldError } = await admin.from("lead_field_definitions").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
   if (fieldError) throw fieldError;
   const leadData: Context = {};
@@ -105,13 +99,20 @@ async function maybeCreateLead(config: Config, conversation: TableRow<"conversat
   const { data: rules, error: rulesError } = await admin.from("qualification_rules").select("*").eq("tenant_id", config.tenant_id).eq("is_active", true);
   if (rulesError) throw rulesError;
   const qualification = evaluateQualification((rules ?? []) as TableRow<"qualification_rules">[], context);
-  const { data: lead, error: leadError } = await admin.from("leads").insert({ tenant_id: config.tenant_id, contact_id: contactId, lead_data: leadData, status: qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying", qualification_status: qualification.qualificationStatus, qualification_score: qualification.score }).select("id").single();
-  if (leadError || !lead) throw leadError ?? new Error("Lead creation failed");
-  const { data: updated, error: updateError } = await admin.from("conversations").update({ contact_id: contactId, lead_id: lead.id, context, last_activity_at: new Date().toISOString() }).eq("id", conversation.id).eq("tenant_id", config.tenant_id).select("*").single();
-  if (updateError || !updated) throw updateError ?? new Error("Conversation association failed");
-  const { error: journeyError } = await admin.from("lead_journeys").update({ conversation_id: conversation.id }).eq("tenant_id", config.tenant_id).eq("lead_id", lead.id);
-  if (journeyError) throw journeyError;
-  return updated as TableRow<"conversations">;
+  const { data: result, error: captureError } = await admin.rpc("create_chatbot_capture_lead", {
+    p_tenant_id: config.tenant_id,
+    p_conversation_id: conversation.id,
+    p_first_name: String(context.first_name).trim(),
+    p_phone: phone,
+    p_email: email,
+    p_lead_data: leadData,
+    p_lead_status: qualification.qualificationStatus === "qualified" ? "qualified" : "qualifying",
+    p_qualification_status: qualification.qualificationStatus,
+    p_qualification_score: qualification.score,
+  }).maybeSingle();
+  if (captureError || !result) throw captureError ?? new Error("Chatbot lead capture failed");
+  const updated = await latestConversation(config, result.conversation_id);
+  return { conversation: updated, created: result.created };
 }
 
 async function applyValidatedAIResult(config: Config, conversation: TableRow<"conversations">, current: Node, text: string) {
@@ -173,6 +174,7 @@ async function enter(config: Config, conversation: TableRow<"conversations">, de
   const admin = createAdminClient();
   let current = destination;
   let updated = conversation;
+  let createdLead = false;
   // Answer/message nodes can advance via a default edge; a cap prevents malformed loops.
   for (let step = 0; step < 8; step += 1) {
     if (!alreadyAtDestination || step > 0) {
@@ -183,7 +185,9 @@ async function enter(config: Config, conversation: TableRow<"conversations">, de
     const content = current.node_type === "end" ? config.confirmation_message || current.content : current.content;
     await append(config.tenant_id, updated.id, current.id, "bot", current.node_type === "action_placeholder" ? "action_placeholder" : "text", content);
     if (current.node_type === "end") {
-      updated = await maybeCreateLead(config, updated, context);
+      const capture = await maybeCreateLead(config, updated, context);
+      updated = capture.conversation;
+      createdLead = capture.created;
       if (updated.lead_id) {
         const { data, error } = await admin.from("conversations").update({ status: "active", ended_at: null }).eq("id", updated.id).eq("tenant_id", config.tenant_id).select("*").single();
         if (error || !data) throw error ?? new Error("Conversation continuation failed");
@@ -196,7 +200,7 @@ async function enter(config: Config, conversation: TableRow<"conversations">, de
     const nextNode = nodes.find((node) => node.id === next.destination_node_id); if (!nextNode) break;
     current = nextNode;
   }
-  return updated;
+  return { conversation: updated, createdLead };
 }
 
 async function activeJourneyFields(tenantId: string) {
@@ -290,6 +294,7 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   if (input.action === "start" || input.action === "restart") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
   const current = nodes.find((node) => node.id === activeConversation.current_node_id); if (!current || activeConversation.status !== "active") return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id));
   let routeHint: "RAG_REQUIRED" | "AI_UNAVAILABLE" | undefined;
+  let createdLead = false;
   if (input.action === "select") {
     const edge = edges.find((item) => item.id === input.edgeId && item.source_node_id === current.id);
     if (!edge) throw new Error("Invalid chatbot transition.");
@@ -298,7 +303,8 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
     const transition = await advanceMenuTransition(config, activeConversation, current, destination, context);
     if (!transition.applied) return view(config, transition.conversation, nodes, edges, await readMessages(transition.conversation.id));
     await append(config.tenant_id, activeConversation.id, current.id, "visitor", "option", edge.label, { edge_id: edge.id });
-    conversation = await enter(config, transition.conversation, destination, context, nodes, edges, true);
+    const entered = await enter(config, transition.conversation, destination, context, nodes, edges, true);
+    conversation = entered.conversation; createdLead = entered.createdLead;
   } else if (input.action === "text") {
     const text = input.text ?? "";
     const bookingEntry = !activeConversation.lead_id ? initialMenuBookingEntry({ rootNodeId: root.id, currentNodeId: current.id, currentNodeType: current.node_type, text, nodes, edges }) : null;
@@ -309,7 +315,8 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
       const transition = await advanceMenuTransition(config, activeConversation, current, destination, context);
       if (!transition.applied) return view(config, transition.conversation, nodes, edges, await readMessages(transition.conversation.id));
       await append(config.tenant_id, activeConversation.id, current.id, "visitor", "text", text);
-      conversation = await enter(config, transition.conversation, destination, context, nodes, edges, true);
+      const entered = await enter(config, transition.conversation, destination, context, nodes, edges, true);
+      conversation = entered.conversation; createdLead = entered.createdLead;
     } else {
       await append(config.tenant_id, activeConversation.id, current.id, "visitor", current.node_type === "capture" ? "capture" : "text", text);
       if (activeConversation.lead_id) {
@@ -327,15 +334,16 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
         const destination = edges.find((edge) => edge.source_node_id === current.id && edge.is_default);
         if (!destination) throw new Error("Capture node has no next step.");
         const node = nodes.find((item) => item.id === destination.destination_node_id); if (!node) throw new Error("Invalid chatbot destination.");
-        conversation = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
+        const entered = await enter(config, activeConversation, node, { ...asContext(activeConversation.context), [current.capture_key!]: text.trim() }, nodes, edges);
+        conversation = entered.conversation; createdLead = entered.createdLead;
       }
     }
   }
   if (!conversation) throw new Error("Conversation update failed");
   let finalConversation = conversation;
   const currentAfterInput = nodes.find((node) => node.id === finalConversation.current_node_id);
-  if (finalConversation.lead_id && currentAfterInput?.node_type === "end" && !startedWithLead) finalConversation = await advanceJourneyConversation(config, finalConversation, currentAfterInput.id);
-  if (finalConversation.lead_id) await recordLeadInboundActivity(config.tenant_id, finalConversation.lead_id);
+  if (finalConversation.lead_id && currentAfterInput?.node_type === "end" && !startedWithLead && createdLead) finalConversation = await advanceJourneyConversation(config, finalConversation, currentAfterInput.id);
+  if (finalConversation.lead_id && (startedWithLead || createdLead)) await recordLeadInboundActivity(config.tenant_id, finalConversation.lead_id);
   return view(config, finalConversation, nodes, edges, await readMessages(finalConversation.id), routeHint);
 }
 
