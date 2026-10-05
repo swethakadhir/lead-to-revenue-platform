@@ -5,15 +5,34 @@ import type { TableRow } from "@/lib/supabase/database.types";
 import { evaluateLeadJourney, type JourneyDecision } from "./orchestrator";
 import { evaluateQualification } from "@/lib/domain/chatbot/qualification";
 import { journeyConversationState } from "@/lib/domain/chatbot/journey-actions";
+import { ChatbotTiming } from "@/lib/domain/chatbot/timing";
 
 type SyncReason = "customer_activity" | "lead_updated" | "intervention_resolved" | "follow_up_executed";
+type JourneyField = TableRow<"lead_field_definitions">;
+type SyncOptions = { fields?: JourneyField[] };
+export type JourneySyncResult = { decision: JourneyDecision | null; fields: JourneyField[] };
 
-export async function syncLeadJourney(tenantId: string, leadId: string, reason: SyncReason): Promise<JourneyDecision | null> {
+export async function syncLeadJourney(tenantId: string, leadId: string, reason: SyncReason, timing?: ChatbotTiming): Promise<JourneyDecision | null> {
+  const result = timing
+    ? await timing.measureIndexed("chatbot.syncLeadJourney", () => syncLeadJourneyInternal(tenantId, leadId, reason, {}, timing))
+    : await syncLeadJourneyInternal(tenantId, leadId, reason);
+  return result.decision;
+}
+
+export async function syncLeadJourneyDetailed(tenantId: string, leadId: string, reason: SyncReason, options: SyncOptions = {}, timing?: ChatbotTiming): Promise<JourneySyncResult> {
+  const operation = () => syncLeadJourneyInternal(tenantId, leadId, reason, options, timing);
+  return timing ? timing.measureIndexed("chatbot.syncLeadJourney", operation) : operation();
+}
+
+async function syncLeadJourneyInternal(tenantId: string, leadId: string, reason: SyncReason, options: SyncOptions = {}, timing?: ChatbotTiming): Promise<JourneySyncResult> {
   const admin = createAdminClient();
+  const fieldsPromise = options.fields
+    ? Promise.resolve({ data: options.fields, error: null })
+    : admin.from("lead_field_definitions").select("key,label,required,is_active").eq("tenant_id", tenantId);
   const [leadResult, settingsResult, fieldsResult, rulesResult, journeyResult, interventionsResult, appointmentsResult, followupsResult, conversationResult] = await Promise.all([
     admin.from("leads").select("*").eq("tenant_id", tenantId).eq("id", leadId).maybeSingle(),
     admin.from("tenant_settings").select("followup_defaults").eq("tenant_id", tenantId).maybeSingle(),
-    admin.from("lead_field_definitions").select("key,label,required,is_active").eq("tenant_id", tenantId),
+    fieldsPromise,
     admin.from("qualification_rules").select("*").eq("tenant_id", tenantId),
     admin.from("lead_journeys").select("*").eq("tenant_id", tenantId).eq("lead_id", leadId).maybeSingle(),
     admin.from("human_interventions").select("id").eq("tenant_id", tenantId).eq("lead_id", leadId).in("status", ["open", "in_progress"]),
@@ -25,7 +44,7 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
   const failed = results.find((result) => result.error);
   if (failed?.error) throw failed.error;
   const lead = leadResult.data as TableRow<"leads"> | null;
-  if (!lead) return null;
+  if (!lead) return { decision: null, fields: (fieldsResult.data ?? []) as JourneyField[] };
   const contactResult = lead.contact_id ? await admin.from("contacts").select("email,phone").eq("tenant_id", tenantId).eq("id", lead.contact_id).maybeSingle() : { data: null, error: null };
   if (contactResult.error) throw contactResult.error;
   const followups = followupsResult.data ?? [];
@@ -52,7 +71,7 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
     if (error) throw error;
     // Re-read the authoritative records after the cancellation trigger has also
     // cancelled matching jobs; this keeps the projection and schedule coherent.
-    return syncLeadJourney(tenantId, leadId, reason);
+    return syncLeadJourneyInternal(tenantId, leadId, reason, options, timing);
   }
 
   // The lifecycle column remains authoritative for terminal state. Reaching the
@@ -89,14 +108,21 @@ export async function syncLeadJourney(tenantId: string, leadId: string, reason: 
       if (eventError) throw eventError;
     }
   }
-  return decision;
+  return { decision, fields: (fieldsResult.data ?? []) as JourneyField[] };
 }
 
-export async function recordLeadInboundActivity(tenantId: string, leadId: string) {
+export async function recordLeadInboundActivity(tenantId: string, leadId: string, timing?: ChatbotTiming, priorDecision?: JourneyDecision | null) {
+  const operation = async () => {
   const admin = createAdminClient();
   // Only orchestrator-created follow-ups are obsolete on a reply; manual work is
   // intentionally left for an operator to decide.
   const { data: cancelled, error } = await admin.from("followups").update({ status: "cancelled", outcome: "Cancelled after customer activity." }).eq("tenant_id", tenantId).eq("lead_id", leadId).eq("status", "pending").not("automation_key", "is", null).select("id");
   if (error) throw error;
-  return { cancelled: cancelled?.length ?? 0, decision: await syncLeadJourney(tenantId, leadId, "customer_activity") };
+  const cancelledCount = cancelled?.length ?? 0;
+  const decision = cancelledCount === 0 && priorDecision !== undefined
+    ? priorDecision
+    : await syncLeadJourney(tenantId, leadId, "customer_activity", timing);
+  return { cancelled: cancelledCount, decision };
+  };
+  return timing?.measure("chatbot.recordLeadInboundActivity", operation) ?? operation();
 }
