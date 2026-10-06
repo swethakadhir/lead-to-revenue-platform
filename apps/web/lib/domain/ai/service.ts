@@ -8,6 +8,7 @@ export const aiUnderstandingSchema = z.object({
   answer: z.string().trim().max(2000).nullable().optional(), needs_more_information: z.boolean().default(false),
   suggested_next_question: z.string().trim().max(500).nullable().optional(), human_intervention_required: z.boolean().default(false),
   human_intervention_reason: z.string().trim().max(500).nullable().optional(),
+  knowledge_answer_available: z.boolean().default(false),
 });
 export type AIUnderstanding = z.infer<typeof aiUnderstandingSchema>;
 
@@ -28,6 +29,7 @@ export function buildDifyChatMessageBody(input: AIMessageInput, mode: "understan
     inputs: {
       tenant_id: input.tenantId,
       knowledge_scope: input.knowledgeScope,
+      ...(mode === "knowledge" && input.datasetId ? { dataset_id: input.datasetId } : {}),
       routing_mode: mode,
       current_node: input.currentNodeKey,
       // The configured Dify Chatflow declares this as a text input, not a JSON input.
@@ -40,5 +42,13 @@ export function buildDifyChatMessageBody(input: AIMessageInput, mode: "understan
   };
 }
 export type AIServiceResult = { ok: true; provider: "dify"; result: AIUnderstanding } | { ok: false; provider: "dify" | "none"; category: "unconfigured" | "timeout" | "unavailable" | "malformed" | "low_confidence" };
-export type AIMessageInput = { tenantId: string; conversationId: string; message: string; currentNodeKey: string; context: Record<string, Json | undefined>; knowledgeScope: string; configuredFields: { key: string; label: string; fieldType: string; options: string[] }[] };
+export type AIMessageInput = { tenantId: string; conversationId: string; message: string; currentNodeKey: string; context: Record<string, Json | undefined>; knowledgeScope: string; datasetId?: string; configuredFields: { key: string; label: string; fieldType: string; options: string[] }[] };
 export interface AIService { understandMessage(input: AIMessageInput): Promise<AIServiceResult>; answerKnowledgeQuery(input: AIMessageInput): Promise<AIServiceResult>; }
+
+export function isKnowledgeIntent(intent: AIUnderstanding["intent"]) {
+  return intent === "business_information" || intent === "pricing_question" || intent === "service_enquiry";
+}
+
+export function hasGroundedKnowledgeAnswer(result: AIUnderstanding) {
+  return result.knowledge_answer_available === true && typeof result.answer === "string" && result.answer.trim().length > 0;
+}

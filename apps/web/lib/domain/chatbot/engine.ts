@@ -5,6 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TableRow } from "@/lib/supabase/database.types";
 import { acceptsCaptureInput, initialMenuBookingEntry, isConfiguredBookingSelection, isPublicWidgetAvailable, isStaleMenuTransition } from "./policy";
 import { getAIService } from "@/lib/domain/ai";
+import { hasGroundedKnowledgeAnswer, isKnowledgeIntent } from "@/lib/domain/ai/service";
+import { resolveTenantKnowledgeBinding } from "@/lib/domain/ai/knowledge-binding";
 import { fieldOptions, validateDynamicJsonValue } from "@/lib/domain/configuration/dynamic-fields";
 import { evaluateQualification } from "./qualification";
 import { bookingReady } from "@/lib/domain/journey/state";
@@ -154,12 +156,29 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   }
   const context = asContext(conversation.context);
   routerDiagnostic("AI route selected", { tenant_scoped: true, capture_state: false });
-  const aiOperation = () => getAIService().understandMessage({ tenantId: config.tenant_id, conversationId: conversation.id, message: text, currentNodeKey: current.key, context, knowledgeScope: aiConfig.knowledge_scope, configuredFields: (fields ?? []).map((field) => ({ key: field.key, label: field.label, fieldType: field.field_type, options: fieldOptions(field) })) });
+  const aiInput = { tenantId: config.tenant_id, conversationId: conversation.id, message: text, currentNodeKey: current.key, context, knowledgeScope: aiConfig.knowledge_scope, configuredFields: (fields ?? []).map((field) => ({ key: field.key, label: field.label, fieldType: field.field_type, options: fieldOptions(field) })) };
+  const aiOperation = () => getAIService().understandMessage(aiInput);
   const result = await (timing?.measure("chatbot.dify_request", aiOperation) ?? aiOperation());
   if (!result.ok) {
     routerDiagnostic("AI fallback used", { reason: result.category });
     await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "ai_failure", provider: result.provider, failure_category: result.category }, timing);
     return { conversation, routeHint: "AI_UNAVAILABLE" as const };
+  }
+  if (isKnowledgeIntent(result.result.intent)) {
+    const binding = await resolveTenantKnowledgeBinding(config.tenant_id);
+    if (binding.status !== "active") {
+      await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "knowledge_unavailable", provider: "none" }, timing);
+      return { conversation, routeHint: "AI_UNAVAILABLE" as const, knowledgeDetour: true };
+    }
+    const knowledgeInput = { ...aiInput, datasetId: binding.datasetId };
+    const knowledgeOperation = () => getAIService().answerKnowledgeQuery(knowledgeInput);
+    const knowledge = await (timing?.measure("chatbot.dify_knowledge_request", knowledgeOperation) ?? knowledgeOperation());
+    if (!knowledge.ok || !hasGroundedKnowledgeAnswer(knowledge.result)) {
+      await append(config.tenant_id, conversation.id, current.id, "bot", "fallback", config.fallback_message, { route: "knowledge_fallback", provider: knowledge.provider, failure_category: knowledge.ok ? "unavailable" : knowledge.category }, timing);
+      return { conversation, routeHint: "AI_UNAVAILABLE" as const, knowledgeDetour: true };
+    }
+    await append(config.tenant_id, conversation.id, current.id, "bot", "text", knowledge.result.answer!, { route: "knowledge_answer", provider: knowledge.provider }, timing);
+    return { conversation, routeHint: undefined, knowledgeDetour: true };
   }
   const accepted: Context = {};
   for (const field of fields ?? []) {
@@ -194,7 +213,7 @@ async function applyValidatedAIResult(config: Config, conversation: TableRow<"co
   }
   const response = result.result.answer || result.result.suggested_next_question || config.fallback_message;
   await append(config.tenant_id, conversation.id, current.id, "bot", "text", response, { route: intervention ? "human_intervention" : "ai_understanding", intent: result.result.intent, confidence: result.result.confidence, requirement: requirement ?? null, provider: result.provider, mapped_field_keys: Object.keys(accepted), missing_field_keys: qualification.missingFieldKeys }, timing);
-  return { conversation: updated as TableRow<"conversations">, routeHint: undefined };
+    return { conversation: updated as TableRow<"conversations">, routeHint: undefined, knowledgeDetour: false };
 }
 
 async function enter(config: Config, conversation: TableRow<"conversations">, destination: Node, context: Context, nodes: Node[], edges: Edge[], alreadyAtDestination = false, timing?: ChatbotTiming) {
@@ -275,12 +294,14 @@ async function applyJourneyAnswer(config: Config, conversation: TableRow<"conver
   // A customer question or booking request is a detour, not an answer to a text field.
   if (!pending || looksLikeCustomerQuestion(text) || looksLikeBookingRequest(text)) {
     const ai = await applyValidatedAIResult(config, conversation, current, text, timing);
+    if (ai.knowledgeDetour) return { conversation: ai.conversation, routeHint: ai.routeHint, decision: null };
     const advanced = await advanceJourneyConversationDetailed(config, ai.conversation, current.id, fields as TableRow<"lead_field_definitions">[], timing);
     return { conversation: advanced.conversation, routeHint: ai.routeHint, decision: advanced.decision };
   }
   const parsed = validateDynamicJsonValue(pending as TableRow<"lead_field_definitions">, text);
   if (parsed.error || parsed.value === undefined) {
     const ai = await applyValidatedAIResult(config, conversation, current, text, timing);
+    if (ai.knowledgeDetour) return { conversation: ai.conversation, routeHint: ai.routeHint, decision: null };
     const advanced = await advanceJourneyConversationDetailed(config, ai.conversation, current.id, fields as TableRow<"lead_field_definitions">[], timing);
     return { conversation: advanced.conversation, routeHint: ai.routeHint, decision: advanced.decision };
   }
