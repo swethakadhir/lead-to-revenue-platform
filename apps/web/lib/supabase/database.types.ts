@@ -46,9 +46,9 @@ export type Database = {
         Relationships: [];
       };
       tenant_ai_configs: {
-        Row: { id: string; tenant_id: string; enabled: boolean; provider: string; knowledge_scope: string; created_at: string; updated_at: string };
-        Insert: { id?: string; tenant_id: string; enabled?: boolean; provider?: string; knowledge_scope: string };
-        Update: { enabled?: boolean; provider?: string; knowledge_scope?: string; updated_at?: string };
+        Row: { id: string; tenant_id: string; enabled: boolean; provider: string; knowledge_scope: string; dify_dataset_id: string | null; knowledge_binding_status: "active" | "inactive" | "invalid" | "unavailable"; created_at: string; updated_at: string };
+        Insert: { id?: string; tenant_id: string; enabled?: boolean; provider?: string; knowledge_scope: string; dify_dataset_id?: string | null; knowledge_binding_status?: "active" | "inactive" | "invalid" | "unavailable" };
+        Update: { enabled?: boolean; provider?: string; knowledge_scope?: string; dify_dataset_id?: string | null; knowledge_binding_status?: "active" | "inactive" | "invalid" | "unavailable"; updated_at?: string };
         Relationships: [];
       };
       lead_journeys: {

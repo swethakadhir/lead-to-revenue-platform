@@ -434,7 +434,7 @@ Add uniqueness where possible for provider/external message IDs.
 
 ### `tenant_ai_configs`
 
-One optional, tenant-owned, operator-managed non-secret configuration row for AI routing. It contains `enabled`, provider name, and `knowledge_scope`; API keys never belong in this table. Its RLS permits only active `platform_operators`. Conversation message `metadata` stores small operational routing facts (route, validated intent/confidence, mapped field keys, and provider failure category) but never hidden reasoning or credentials.
+One optional, tenant-owned, operator-managed non-secret configuration row for AI routing. It contains `enabled`, provider name, and `knowledge_scope`; API keys never belong in this table. For the current tenant-specific knowledge MVP it also stores one externally managed primary Dify dataset reference (`dify_dataset_id`) and a binding status. Supabase stores this trusted binding/status; Dify owns and indexes the knowledge. `knowledge_scope` remains an optional routing/prompt hint and is not an isolation mechanism. Dataset IDs are never accepted from browser or chatbot input. Its RLS permits only active `platform_operators`. Conversation message `metadata` stores small operational routing facts (route, validated intent/confidence, mapped field keys, and provider failure category) but never hidden reasoning or credentials.
 
 ### Journey and action foundation
 
