@@ -144,6 +144,12 @@ Suggested fields:
 Use structured columns for frequently queried fields. Use JSONB only for flexible settings that do not justify a dedicated schema yet.
 `tenants.currency` is the canonical tenant currency; do not duplicate currency ownership in this table.
 
+For the self-booking MVP, `business_hours` may include the tenant-scoped booking configuration:
+`weekly` (enabled weekday keys `mon` through `sun`, each with `start` and `end` in `HH:MM`),
+`slot_duration_minutes`, and `slot_interval_minutes`. The existing `tenants.timezone` remains
+authoritative for interpreting these local times. Other JSON properties remain tenant-owned and
+must be preserved when this configuration is updated.
+
 ---
 
 ### `lead_field_definitions`

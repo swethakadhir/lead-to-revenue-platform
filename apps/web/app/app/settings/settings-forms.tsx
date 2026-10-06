@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { applyTemplate, saveAppointmentTypes, saveField, saveStage, type SettingsState } from "./actions";
+import { applyTemplate, saveAppointmentTypes, saveBookingHours, saveField, saveStage, type SettingsState } from "./actions";
 import type { TableRow } from "@/lib/supabase/database.types";
 import { appointmentTypes, fieldOptions } from "@/lib/domain/configuration/dynamic-fields";
+import { bookingWeekdays, type BookingHours } from "@/lib/domain/configuration/booking-hours";
 
 const initial: SettingsState = { error: null };
 const input = "rounded-lg border border-slate-300 px-3 py-2 text-sm";
@@ -27,4 +28,29 @@ export function AppointmentTypesForm({ value }: { value: TableRow<"tenant_settin
 export function StageSettingsForm({ stage }: { stage: TableRow<"pipeline_definitions"> }) {
   const [state, action, pending] = useActionState(saveStage, initial);
   return <form action={action} className="flex flex-wrap items-center gap-2"><input name="key" type="hidden" value={stage.key} /><span className="w-40 text-xs text-slate-500 capitalize">{stage.stage_type} stage</span><input aria-label={`${stage.name} stage name`} className={input} defaultValue={stage.name} name="name" required /><button className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-60" disabled={pending}>Save</button><Notice state={state} /></form>;
+}
+
+const weekdayLabels: Record<(typeof bookingWeekdays)[number], string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+
+export function BookingHoursForm({ value, timezone, invalidMessage }: { value: BookingHours; timezone: string; invalidMessage?: string }) {
+  const [state, action, pending] = useActionState(saveBookingHours, initial);
+  return <form action={action} className="grid gap-4">
+    <p className="text-sm text-slate-600">Customer booking slots use the tenant timezone: <span className="font-medium">{timezone}</span>.</p>
+    {invalidMessage && <p role="alert" className="text-sm text-amber-700">Existing booking settings need correction: {invalidMessage}</p>}
+    <div className="grid gap-2">
+      {bookingWeekdays.map((weekday) => {
+        const day = value.weekly[weekday] ?? { enabled: false, start: "09:00", end: "17:00" };
+        return <div className="grid items-center gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[8rem_1fr_1fr]" key={weekday}>
+          <label className="flex items-center gap-2 text-sm"><input defaultChecked={day.enabled} name={`booking.${weekday}.enabled`} type="checkbox" /> {weekdayLabels[weekday]}</label>
+          <label className="grid gap-1 text-xs text-slate-500">Start<input className={input} defaultValue={day.start} name={`booking.${weekday}.start`} type="time" /></label>
+          <label className="grid gap-1 text-xs text-slate-500">End<input className={input} defaultValue={day.end} name={`booking.${weekday}.end`} type="time" /></label>
+        </div>;
+      })}
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="grid gap-1 text-sm">Slot duration (minutes)<input className={input} defaultValue={value.slot_duration_minutes} min="5" max="480" name="booking.slotDuration" type="number" required /></label>
+      <label className="grid gap-1 text-sm">Slot interval (minutes)<input className={input} defaultValue={value.slot_interval_minutes} min="5" max="480" name="booking.slotInterval" type="number" required /></label>
+    </div>
+    <div className="flex items-center gap-2"><button className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-60" disabled={pending}>Save booking hours</button><Notice state={state} /></div>
+  </form>;
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getActiveTenant } from "@/lib/tenancy/active-tenant";
 import { createClient } from "@/lib/supabase/server";
+import { bookingHoursFromForm, bookingWeekdays, mergeBookingHours } from "@/lib/domain/configuration/booking-hours";
 
 export type SettingsState = { error: string | null; message?: string };
 
@@ -63,4 +64,30 @@ export async function saveStage(_state: SettingsState, formData: FormData): Prom
   if (error) return { error: "Could not save stage name." };
   revalidatePath("/app/settings"); revalidatePath("/app/pipeline");
   return { error: null, message: "Stage renamed." };
+}
+
+export async function saveBookingHours(_state: SettingsState, formData: FormData): Promise<SettingsState> {
+  const tenant = await adminTenant();
+  if (!tenant) return { error: "Only owners and admins can change configuration." };
+  try {
+    const days = Object.fromEntries(bookingWeekdays.map((weekday) => [weekday, {
+      enabled: formData.get(`booking.${weekday}.enabled`) === "on",
+      start: formData.get(`booking.${weekday}.start`) ?? "09:00",
+      end: formData.get(`booking.${weekday}.end`) ?? "17:00",
+    }])) as Parameters<typeof bookingHoursFromForm>[0]["days"];
+    const next = bookingHoursFromForm({
+      duration: Number(formData.get("booking.slotDuration")),
+      interval: Number(formData.get("booking.slotInterval")),
+      days,
+    });
+    const client = await createClient();
+    const { data: current, error: readError } = await client.from("tenant_settings").select("business_hours").eq("tenant_id", tenant.id).maybeSingle();
+    if (readError || !current) return { error: "Could not read this business's booking settings." };
+    const { error } = await client.from("tenant_settings").update({ business_hours: mergeBookingHours(current.business_hours, next) }).eq("tenant_id", tenant.id);
+    if (error) return { error: "Could not save booking hours." };
+    revalidatePath("/app/settings");
+    return { error: null, message: "Booking hours saved." };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Enter valid booking hours." };
+  }
 }

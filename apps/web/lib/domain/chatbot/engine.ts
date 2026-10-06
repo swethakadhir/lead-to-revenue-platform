@@ -12,6 +12,7 @@ import { recordLeadInboundActivity, syncLeadJourneyDetailed, type JourneySyncRes
 import type { JourneyDecision } from "@/lib/domain/journey/orchestrator";
 import { journeyConversationState, looksLikeBookingRequest, looksLikeCustomerQuestion, selectJourneyConversationAction, withJourneyConversationState } from "./journey-actions";
 import { ChatbotTiming } from "./timing";
+import { bookingConfirmation, getChatbotBookingPresentation, isBookingSlotOption, selectChatbotBookingSlot } from "@/lib/domain/appointments/chatbot-booking";
 
 function routerDiagnostic(event: string, details: Record<string, string | boolean> = {}) {
   if (process.env.NODE_ENV === "development") console.info("[ChatbotRouter]", event, details);
@@ -21,12 +22,12 @@ type Config = TableRow<"chatbot_configs">;
 type Node = TableRow<"chatbot_nodes">;
 type Edge = TableRow<"chatbot_edges">;
 type Context = Record<string, Json | undefined>;
-export type ChatView = { conversationId: string; assistantName: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; routeHint?: "RAG_REQUIRED" | "AI_UNAVAILABLE" };
+export type ChatView = { conversationId: string; assistantName: string; node: { key: string; type: string; content: string; captureType: string | null }; options: { id: string; label: string }[]; messages: { sender: string; content: string }[]; status: string; branding: Json; bookingMessage?: string; routeHint?: "RAG_REQUIRED" | "AI_UNAVAILABLE" };
 
 export const publicChatInput = z.object({
   widgetId: z.uuid(), sessionId: z.uuid(),
   action: z.enum(["start", "select", "text", "restart"]),
-  edgeId: z.uuid().optional(), text: z.string().trim().max(1000).optional(),
+  edgeId: z.string().trim().max(300).optional(), text: z.string().trim().max(1000).optional(),
 });
 
 function asContext(value: Json): Context { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
@@ -55,7 +56,17 @@ function optionsFor(edges: Edge[], nodeId: string) { return edges.filter((edge) 
 async function view(config: Config, conversation: TableRow<"conversations">, nodes: Node[], edges: Edge[], messages: { sender_type: string; content: string }[], routeHint?: "RAG_REQUIRED" | "AI_UNAVAILABLE"): Promise<ChatView> {
   const node = nodes.find((item) => item.id === conversation.current_node_id) ?? nodes.find((item) => item.id === config.root_node_id);
   if (!node) throw new Error("The chatbot flow has no root node.");
-  return { conversationId: conversation.id, assistantName: config.name, node: { key: node.key, type: node.node_type, content: node.content, captureType: node.capture_type }, options: optionsFor(edges, node.id), messages: messages.map((message) => ({ sender: message.sender_type, content: message.content })), status: conversation.status, branding: config.branding, routeHint };
+  const transcript = messages.map((message) => ({ sender: message.sender_type, content: message.content }));
+  const booking = conversation.lead_id ? await getChatbotBookingPresentation(config.tenant_id, conversation) : null;
+  let bookingMessage: string | undefined;
+  let options = optionsFor(edges, node.id);
+  if (booking && booking.kind !== "not_ready") {
+    options = booking.options;
+    if (booking.kind === "available") bookingMessage = "Choose an available appointment time.";
+    else if (booking.kind === "already_booked" && booking.existing && !transcript.some((message) => message.sender === "bot" && message.content.startsWith("Your appointment is scheduled for"))) bookingMessage = bookingConfirmation({ resultCode: "already_booked", appointmentId: "existing", startsAt: booking.existing.startsAt, endsAt: booking.existing.endsAt }, booking.existing.timezone);
+    else bookingMessage = booking.message;
+  }
+  return { conversationId: conversation.id, assistantName: config.name, node: { key: node.key, type: node.node_type, content: node.content, captureType: node.capture_type }, options, messages: transcript, status: conversation.status, branding: config.branding, bookingMessage, routeHint };
 }
 
 async function append(tenantId: string, conversationId: string, nodeId: string | null, sender: "visitor" | "bot" | "system", type: "text" | "option" | "capture" | "fallback" | "action_placeholder", content: string, metadata: Json = {}, timing?: ChatbotTiming) {
@@ -340,6 +351,30 @@ async function processForConfig(config: Config, input: z.infer<typeof publicChat
   let journeyFields: TableRow<"lead_field_definitions">[] | undefined;
   let priorDecision: JourneyDecision | null | undefined;
   if (input.action === "select") {
+    if (isBookingSlotOption(input.edgeId)) {
+      const currentBooking = await getChatbotBookingPresentation(config.tenant_id, activeConversation);
+      if (currentBooking.kind === "already_booked") {
+        return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id, timing));
+      }
+      const selection = await selectChatbotBookingSlot(config.tenant_id, activeConversation, input.edgeId!);
+      if (selection.result.resultCode === "booked") {
+        await append(config.tenant_id, activeConversation.id, current.id, "visitor", "option", selection.slot ? selection.presentation.options.find((option) => option.id === input.edgeId)?.label ?? "Selected appointment time" : "Selected appointment time", { booking_slot: input.edgeId }, timing);
+        await append(config.tenant_id, activeConversation.id, current.id, "bot", "text", bookingConfirmation(selection.result, selection.slot?.timezone ?? "UTC"), { route: "self_booking", result: "booked" }, timing);
+        const refreshed = await latestConversation(config, activeConversation.id, timing);
+        return view(config, refreshed, nodes, edges, await readMessages(refreshed.id, timing));
+      }
+      if (selection.result.resultCode === "already_booked") {
+        const refreshed = await latestConversation(config, activeConversation.id, timing);
+        return view(config, refreshed, nodes, edges, await readMessages(refreshed.id, timing));
+      }
+      if (selection.result.resultCode === "slot_unavailable") {
+        await append(config.tenant_id, activeConversation.id, current.id, "visitor", "option", "Selected appointment time", { booking_slot: input.edgeId }, timing);
+        await append(config.tenant_id, activeConversation.id, current.id, "bot", "text", "That appointment time is no longer available. Please choose another time.", { route: "self_booking", result: "slot_unavailable" }, timing);
+        return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id, timing));
+      }
+      await append(config.tenant_id, activeConversation.id, current.id, "bot", "fallback", "That booking option is no longer valid. Please choose another option.", { route: "self_booking", result: "invalid_request" }, timing);
+      return view(config, activeConversation, nodes, edges, await readMessages(activeConversation.id, timing));
+    }
     const edge = edges.find((item) => item.id === input.edgeId && item.source_node_id === current.id);
     if (!edge) throw new Error("Invalid chatbot transition.");
     const destination = nodes.find((node) => node.id === edge.destination_node_id); if (!destination) throw new Error("Invalid chatbot destination.");

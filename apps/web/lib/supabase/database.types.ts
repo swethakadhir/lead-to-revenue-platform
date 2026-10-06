@@ -166,6 +166,10 @@ export type Database = {
         Args: { p_tenant_id: string; p_conversation_id: string; p_first_name: string; p_phone: string; p_email: string | null; p_lead_data: Json; p_lead_status: string; p_qualification_status: string; p_qualification_score: number | null };
         Returns: { conversation_id: string; contact_id: string | null; lead_id: string; created: boolean }[];
       };
+      create_chatbot_self_booking: {
+        Args: { p_tenant_id: string; p_conversation_id: string; p_slot_start: string; p_slot_end: string };
+        Returns: { result_code: string; appointment_id: string | null; starts_at: string | null; ends_at: string | null }[];
+      };
       claim_due_action_jobs: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
       complete_action_job: { Args: { p_job_id: string; p_success: boolean; p_error_category?: string | null; p_error_message?: string | null }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"] };
       claim_due_action_jobs_worker: { Args: { p_limit?: number }; Returns: Database["public"]["Tables"]["action_jobs"]["Row"][] };
